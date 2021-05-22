@@ -1,7 +1,4 @@
-# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
-
-XDP_TARGETS := tc_test
-#USER_TARGETS := xdp_pass_user
+XDP_TARGETS := tc_prog_kern
 
 LLC ?= llc
 CLANG ?= clang
