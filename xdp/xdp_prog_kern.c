@@ -20,7 +20,7 @@ struct bpf_map_def SEC("maps") xdp_test_map = {
 };
 
 SEC("xdp_test")
-int  xdp_test_func(struct xdp_md *ctx)
+int xdp_test_func(struct xdp_md *ctx)
 {
 	__u32 key, value;
 	__u64 cur_time = bpf_ktime_get_ns();
@@ -37,3 +37,5 @@ int  xdp_test_func(struct xdp_md *ctx)
 	rec->total_bytes += value;
 	return XDP_PASS;
 }
+
+char _license[] SEC("license") = "GPL";
