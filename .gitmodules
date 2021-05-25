@@ -1,0 +1,3 @@
+[submodule "libbpf"]
+	path = libbpf
+	url = https://github.com/libbpf/libbpf/tree/b91f53ec5f1aba2a9d01dc00c4434063abd921e8
