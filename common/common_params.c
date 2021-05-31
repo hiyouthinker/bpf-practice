@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpq",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqP",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -147,6 +147,9 @@ void parse_cmdline_args(int argc, char **argv,
 			break;
 		case 'M':
 			cfg->reuse_maps = true;
+#ifdef __BIGBRO__
+			sprintf(cfg->pin_dir, "/sys/fs/bpf/%s", cfg->ifname);
+#endif
 			break;
 		case 'U':
 			cfg->do_unload = true;
@@ -157,6 +160,12 @@ void parse_cmdline_args(int argc, char **argv,
 		case 'q':
 			verbose = false;
 			break;
+#ifdef __BIGBRO__
+		case 'P':
+			cfg->pin_map = 1;
+			break;
+#endif
+
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);
 			break;

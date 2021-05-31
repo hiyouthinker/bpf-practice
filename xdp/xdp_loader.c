@@ -50,6 +50,9 @@ static const struct option_wrapper long_options[] = {
 	{{"quiet",       no_argument,		NULL, 'q' },
 	 "Quiet mode (no output)"},
 
+	{{"pin",		 no_argument,		NULL, 'P' },
+	 "pin the map to bpf fs"},
+
 	{{"filename",    required_argument,	NULL,  1  },
 	 "Load program from <file>", "<file>"},
 
@@ -64,12 +67,10 @@ static const struct option_wrapper long_options[] = {
 #endif
 
 const char *pin_basedir =  "/sys/fs/bpf";
-const char *map_name    =  "xdp_stats_map";
 
 /* Pinning maps under /sys/fs/bpf in subdir */
-int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
+static int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
 {
-	char map_filename[PATH_MAX];
 	char pin_dir[PATH_MAX];
 	int err, len;
 
@@ -79,15 +80,7 @@ int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
 		return EXIT_FAIL_OPTION;
 	}
 
-	len = snprintf(map_filename, PATH_MAX, "%s/%s/%s",
-		       pin_basedir, subdir, map_name);
-	if (len < 0) {
-		fprintf(stderr, "ERR: creating map_name\n");
-		return EXIT_FAIL_OPTION;
-	}
-
-	/* Existing/previous XDP prog might not have cleaned up */
-	if (access(map_filename, F_OK ) != -1 ) {
+	if (access(pin_dir, F_OK ) != -1 ) {
 		if (verbose)
 			printf(" - Unpinning (remove) prev maps in %s/\n",
 			       pin_dir);
@@ -99,6 +92,7 @@ int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
 			return EXIT_FAIL_BPF;
 		}
 	}
+
 	if (verbose)
 		printf(" - Pinning maps in %s/\n", pin_dir);
 
@@ -108,6 +102,12 @@ int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
 		return EXIT_FAIL_BPF;
 
 	return 0;
+}
+
+static int my_print(enum libbpf_print_level level, const char *format,
+		     va_list args)
+{
+	return vfprintf(stderr, format, args);
 }
 
 int main(int argc, char **argv)
@@ -125,6 +125,8 @@ int main(int argc, char **argv)
 	/* Cmdline options can change progsec */
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
 
+	libbpf_set_print(my_print);
+
 	/* Required option */
 	if (cfg.ifindex == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n\n");
@@ -135,12 +137,6 @@ int main(int argc, char **argv)
 		/* TODO: Miss unpin of maps on unload */
 		return xdp_link_detach(cfg.ifindex, cfg.xdp_flags, 0);
 	}
-
-#if 1
-	if (cfg.reuse_maps) {
-		sprintf(cfg.pin_dir, "/sys/fs/bpf/%s", cfg.ifname);
-	}
-#endif
 
 	bpf_obj = load_bpf_and_xdp_attach(&cfg);
 	if (!bpf_obj)
@@ -153,21 +149,12 @@ int main(int argc, char **argv)
 		       cfg.ifname, cfg.ifindex);
 	}
 
-#if 0
-	/* Use the --dev name as subdir for exporting/pinning maps */
-	err = pin_maps_in_bpf_object(bpf_obj, cfg.ifname);
-	if (err) {
-		fprintf(stderr, "ERR: pinning maps\n");
-		return err;
-	}
-#else
-	if (!cfg.reuse_maps) {
+	if (!cfg.reuse_maps && cfg.pin_map) {
 		err = pin_maps_in_bpf_object(bpf_obj, cfg.ifname);
 		if (err) {
 			fprintf(stderr, "ERR: pinning maps\n");
 			return err;
 		}
 	}
-#endif
 	return EXIT_OK;
 }

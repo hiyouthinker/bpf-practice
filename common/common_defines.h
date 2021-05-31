@@ -5,6 +5,8 @@
 #include <linux/types.h>
 #include <stdbool.h>
 
+#define __BIGBRO__
+
 struct config {
 	__u32 xdp_flags;
 	int ifindex;
@@ -23,6 +25,9 @@ struct config {
 	__u16 xsk_bind_flags;
 	int xsk_if_queue;
 	bool xsk_poll_mode;
+#ifdef __BIGBRO__
+	bool pin_map;
+#endif
 };
 
 /* Defined in common_params.o */

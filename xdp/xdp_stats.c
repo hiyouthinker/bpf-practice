@@ -60,67 +60,7 @@ struct stats_record {
 	struct record stats[XDP_ACTION_MAX];
 };
 
-static double calc_period(struct record *r, struct record *p)
-{
-	double period_ = 0;
-	__u64 period = 0;
-
-	period = r->timestamp - p->timestamp;
-	if (period > 0)
-		period_ = ((double) period / NANOSEC_PER_SEC);
-
-	return period_;
-}
-
-static void stats_print_header()
-{
-	/* Print stats "header" */
-	printf("%-12s\n", "XDP-action");
-}
-
-static void stats_print(struct stats_record *stats_rec,
-			struct stats_record *stats_prev)
-{
-	struct record *rec, *prev;
-	__u64 packets, bytes;
-	double period;
-	double pps; /* packets per sec */
-	double bps; /* bits per sec */
-	int i;
-
-	stats_print_header(); /* Print stats "header" */
-
-	/* Print for each XDP actions stats */
-	for (i = 0; i < XDP_ACTION_MAX; i++)
-	{
-		char *fmt = "%-12s %'11lld pkts (%'10.0f pps)"
-			" %'11lld Kbytes (%'6.0f Mbits/s)"
-			" period:%f\n";
-		const char *action = action2str(i);
-
-		rec  = &stats_rec->stats[i];
-		prev = &stats_prev->stats[i];
-
-		period = calc_period(rec, prev);
-		if (period == 0)
-		       return;
-
-		packets = rec->total.rx_packets - prev->total.rx_packets;
-		pps     = packets / period;
-
-		bytes   = rec->total.rx_bytes   - prev->total.rx_bytes;
-		bps     = (bytes * 8)/ period / 1000000;
-
-		printf(fmt, action, rec->total.rx_packets, pps,
-		       rec->total.rx_bytes / 1000 , bps,
-		       period);
-	}
-	printf("\n");
-}
-
-
-/* BPF_MAP_TYPE_ARRAY */
-void map_get_value_array(int fd, __u32 key, struct datarec *value)
+static void map_get_value_array(int fd, __u32 key, struct stats_common_s *value)
 {
 	if ((bpf_map_lookup_elem(fd, &key, value)) != 0) {
 		fprintf(stderr,
@@ -128,122 +68,33 @@ void map_get_value_array(int fd, __u32 key, struct datarec *value)
 	}
 }
 
-/* BPF_MAP_TYPE_PERCPU_ARRAY */
-void map_get_value_percpu_array(int fd, __u32 key, struct datarec *value)
+static bool map_collect(int fd, __u32 key, struct stats_common_s *value)
 {
-	/* For percpu maps, userspace gets a value per possible CPU */
-	unsigned int nr_cpus = bpf_num_possible_cpus();
-	struct datarec values[nr_cpus];
-	__u64 sum_bytes = 0;
-	__u64 sum_pkts = 0;
-	int i;
-
-	if ((bpf_map_lookup_elem(fd, &key, values)) != 0) {
-		fprintf(stderr,
-			"ERR: bpf_map_lookup_elem failed key:0x%X\n", key);
-		return;
-	}
-
-	/* Sum values from each CPU */
-	for (i = 0; i < nr_cpus; i++) {
-		sum_pkts  += values[i].rx_packets;
-		sum_bytes += values[i].rx_bytes;
-	}
-	value->rx_packets = sum_pkts;
-	value->rx_bytes   = sum_bytes;
-}
-
-static bool map_collect(int fd, __u32 map_type, __u32 key, struct record *rec)
-{
-	struct datarec value;
-
-	/* Get time as close as possible to reading map contents */
-	rec->timestamp = gettime();
-
-	switch (map_type) {
-	case BPF_MAP_TYPE_ARRAY:
-		map_get_value_array(fd, key, &value);
-		break;
-	case BPF_MAP_TYPE_PERCPU_ARRAY:
-		map_get_value_percpu_array(fd, key, &value);
-		break;
-	default:
-		fprintf(stderr, "ERR: Unknown map_type(%u) cannot handle\n",
-			map_type);
-		return false;
-		break;
-	}
-
-	rec->total.rx_packets = value.rx_packets;
-	rec->total.rx_bytes   = value.rx_bytes;
+	map_get_value_array(fd, key, value);
 	return true;
 }
 
-static void stats_collect(int map_fd, __u32 map_type,
-			  struct stats_record *stats_rec)
-{
-	/* Collect all XDP actions stats  */
-	__u32 key;
-
-	for (key = 0; key < XDP_ACTION_MAX; key++) {
-		map_collect(map_fd, map_type, key, &stats_rec->stats[key]);
-	}
-}
-
-static void stats_poll(int map_fd, __u32 map_type, int interval)
-{
-	struct stats_record prev, record = { 0 };
-
-	/* Trick to pretty printf with thousands separators use %' */
-	setlocale(LC_NUMERIC, "en_US");
-
-	/* Get initial reading quickly */
-	stats_collect(map_fd, map_type, &record);
-	usleep(1000000/4);
-
-	while (1) {
-		prev = record; /* struct copy */
-		stats_collect(map_fd, map_type, &record);
-		stats_print(&record, &prev);
-		sleep(interval);
-	}
-}
-
-static void map_get_value_array_new(int fd, __u32 key, struct stats_common_s *value)
-{
-	if ((bpf_map_lookup_elem(fd, &key, value)) != 0) {
-		fprintf(stderr,
-			"ERR: bpf_map_lookup_elem failed key:0x%X\n", key);
-	}
-}
-
-static bool map_collect_new(int fd, __u32 key, struct stats_common_s *value)
-{
-	map_get_value_array_new(fd, key, value);
-	return true;
-}
-
-static void stats_collect_new(int map_fd)
+static void stats_collect(int map_fd)
 {
 	__u32 key, i;
 	struct stats_common_s value;
 
 	for (i = 0; i < __STATS_SITE_MAX; i++) {
 		key = STATS_SITE_KEY(i, 10, 0);
-		map_collect_new(map_fd, key, &value);
+		map_collect(map_fd, key, &value);
 		if (value.total_bytes)
 			printf("IPv4: key: %u, value: %lu\n", key, value.total_bytes);
 	}
 
 	for (i = 0; i < __STATS_SITE_MAX; i++) {
 		key = STATS_SITE_KEY(i, 10, 1);
-		map_collect_new(map_fd, key, &value);
+		map_collect(map_fd, key, &value);
 		if (value.total_bytes)
 			printf("IPv6: key: %u, value: %lu\n", key, value.total_bytes);
 	}
 }
 
-static void stats_poll_new(int map_fd, __u32 map_type, int interval)
+static void stats_poll(int map_fd, __u32 map_type, int interval)
 {
 	__u64 utime;
 
@@ -252,7 +103,7 @@ static void stats_poll_new(int map_fd, __u32 map_type, int interval)
 
 	while (1) {
 		utime = gettime();
-		stats_collect_new(map_fd);
+		stats_collect(map_fd);
 		utime = gettime() - utime;
 	//	printf("interval:  %llu ns, %llu ms\n", utime, utime / 1000000);
 		sleep(interval + 2);
@@ -267,12 +118,11 @@ const char *pin_basedir =  "/sys/fs/bpf";
 
 int main(int argc, char **argv)
 {
-	struct bpf_map_info map_expect = { 0 };
 	struct bpf_map_info info = { 0 };
 	char pin_dir[PATH_MAX];
 	int stats_map_fd;
 	int interval = 2;
-	int len, err;
+	int len;
 
 	struct config cfg = {
 		.ifindex   = -1,
@@ -322,28 +172,6 @@ int main(int argc, char **argv)
 		return EXIT_FAIL_BPF;
 	}
 
-#if 0
-	/* check map info, e.g. datarec is expected size */
-	map_expect.key_size    = sizeof(__u32);
-	map_expect.value_size  = sizeof(struct datarec);
-	map_expect.max_entries = XDP_ACTION_MAX;
-	err = check_map_fd_info(&info, &map_expect);
-	if (err) {
-		fprintf(stderr, "ERR: map via FD not compatible\n");
-		return err;
-	}
-	if (verbose) {
-		printf("\nCollecting stats from BPF map\n");
-		printf(" - BPF map (bpf_map_type:%d) id:%d name:%s"
-		       " key_size:%d value_size:%d max_entries:%d\n",
-		       info.type, info.id, info.name,
-		       info.key_size, info.value_size, info.max_entries
-		       );
-	}
-
 	stats_poll(stats_map_fd, info.type, interval);
-#endif
-
-	stats_poll_new(stats_map_fd, info.type, interval);
 	return EXIT_OK;
 }
