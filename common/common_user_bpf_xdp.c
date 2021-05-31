@@ -273,11 +273,13 @@ struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg)
 		fprintf(stderr, "ERR: couldn't find a program in ELF section '%s'\n", cfg->progsec);
 		exit(EXIT_FAIL_BPF);
 	}
-#if 0 /* compile failed @ BigBro/2021.05.21 */
+
+#ifdef USE_OLD_VERSION_LIBBPF
 	strncpy(cfg->progsec, bpf_program__title(bpf_prog, false), sizeof(cfg->progsec));
 #else
 	strncpy(cfg->progsec, bpf_program__section_name(bpf_prog), sizeof(cfg->progsec));
 #endif
+
 	prog_fd = bpf_program__fd(bpf_prog);
 	if (prog_fd <= 0) {
 		fprintf(stderr, "ERR: bpf_program__fd failed\n");

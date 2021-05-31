@@ -3,7 +3,7 @@ CC := gcc
 
 all: common_params.o common_user_bpf_xdp.o common_libbpf.o
 
-CFLAGS := -g -Wall
+CFLAGS := -g -Wall -DUSE_OLD_VERSION_LIBBPF
 
 LIBBPF_DIR = ../libbpf/src/
 CFLAGS += -I$(LIBBPF_DIR)/build/usr/include/  -I../headers
