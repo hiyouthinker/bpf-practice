@@ -7,6 +7,10 @@
 
 #define __BIGBRO__
 
+#ifdef __BIGBRO__
+#define PIN_BASEDIR		"/sys/fs/bpf"
+#endif
+
 struct config {
 	__u32 xdp_flags;
 	int ifindex;
@@ -27,6 +31,7 @@ struct config {
 	bool xsk_poll_mode;
 #ifdef __BIGBRO__
 	bool pin_map;
+	int debug_level;
 #endif
 };
 

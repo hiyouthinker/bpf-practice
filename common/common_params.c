@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqP",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqPD:",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -148,7 +148,7 @@ void parse_cmdline_args(int argc, char **argv,
 		case 'M':
 			cfg->reuse_maps = true;
 #ifdef __BIGBRO__
-			sprintf(cfg->pin_dir, "/sys/fs/bpf/%s", cfg->ifname);
+			sprintf(cfg->pin_dir, "%s/%s", PIN_BASEDIR, cfg->ifname);
 #endif
 			break;
 		case 'U':
@@ -164,8 +164,16 @@ void parse_cmdline_args(int argc, char **argv,
 		case 'P':
 			cfg->pin_map = 1;
 			break;
+		case 'D': {
+			int level = atoi(optarg);
+			if ((level < 0) || (level > 3)) {
+				fprintf(stderr, "ERR: -D level level must is [0 3]\n");
+				goto error;
+			}
+			cfg->debug_level = level;
+			break;
+		}
 #endif
-
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);
 			break;

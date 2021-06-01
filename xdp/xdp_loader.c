@@ -22,8 +22,6 @@ static const char *__doc__ = "XDP loader\n"
 #include "../common/common_libbpf.h"
 #include "common_kern_user.h"
 
-static const char *default_filename = "xdp_prog_kern.o";
-
 static const struct option_wrapper long_options[] = {
 
 	{{"help",        no_argument,		NULL, 'h' },
@@ -62,19 +60,13 @@ static const struct option_wrapper long_options[] = {
 	{{0, 0, NULL,  0 }, NULL, false}
 };
 
-#ifndef PATH_MAX
-#define PATH_MAX	4096
-#endif
-
-const char *pin_basedir =  "/sys/fs/bpf";
-
 /* Pinning maps under /sys/fs/bpf in subdir */
 static int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
 {
-	char pin_dir[PATH_MAX];
+	char pin_dir[1024];
 	int err, len;
 
-	len = snprintf(pin_dir, PATH_MAX, "%s/%s", pin_basedir, subdir);
+	len = snprintf(pin_dir, sizeof(pin_dir), "%s/%s", PIN_BASEDIR, subdir);
 	if (len < 0) {
 		fprintf(stderr, "ERR: creating pin dirname\n");
 		return EXIT_FAIL_OPTION;
@@ -104,9 +96,13 @@ static int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir
 	return 0;
 }
 
+static int debug_level = LIBBPF_DEBUG;
+
 static int my_print(enum libbpf_print_level level, const char *format,
 		     va_list args)
 {
+	if (level >= debug_level)
+		return 0;
 	return vfprintf(stderr, format, args);
 }
 
@@ -120,10 +116,14 @@ int main(int argc, char **argv)
 		.ifindex   = -1,
 		.do_unload = false,
 	};
-	/* Set default BPF-ELF object file and BPF program name */
-	strncpy(cfg.filename, default_filename, sizeof(cfg.filename));
-	/* Cmdline options can change progsec */
+
+	strncpy(cfg.filename, "xdp_prog_kern.o", sizeof(cfg.filename));
+	cfg.debug_level = -1;
+
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
+
+	if (cfg.debug_level != -1)
+		debug_level = cfg.debug_level;
 
 	libbpf_set_print(my_print);
 
@@ -133,8 +133,8 @@ int main(int argc, char **argv)
 		usage(argv[0], __doc__, long_options, (argc == 1));
 		return EXIT_FAIL_OPTION;
 	}
+
 	if (cfg.do_unload) {
-		/* TODO: Miss unpin of maps on unload */
 		return xdp_link_detach(cfg.ifindex, cfg.xdp_flags, 0);
 	}
 

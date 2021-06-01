@@ -6,16 +6,10 @@ static const char *__doc__ = "XDP stats program\n"
 #include <string.h>
 #include <errno.h>
 #include <getopt.h>
-
 #include <locale.h>
 #include <unistd.h>
 #include <time.h>
-
 #include <bpf/bpf.h>
-/* Lesson#1: this prog does not need to #include <bpf/libbpf.h> as it only uses
- * the simple bpf-syscall wrappers, defined in libbpf #include<bpf/bpf.h>
- */
-
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
@@ -35,29 +29,6 @@ static const struct option_wrapper long_options[] = {
 	 "Quiet mode (no output)"},
 
 	{{0, 0, NULL,  0 }}
-};
-
-#define NANOSEC_PER_SEC 1000000000 /* 10^9 */
-static __u64 gettime(void)
-{
-	struct timespec t;
-	int res;
-
-	res = clock_gettime(CLOCK_MONOTONIC, &t);
-	if (res < 0) {
-		fprintf(stderr, "Error with gettimeofday! (%i)\n", res);
-		exit(EXIT_FAIL);
-	}
-	return (__u64) t.tv_sec * NANOSEC_PER_SEC + t.tv_nsec;
-}
-
-struct record {
-	__u64 timestamp;
-	struct datarec total; /* defined in common_kern_user.h */
-};
-
-struct stats_record {
-	struct record stats[XDP_ACTION_MAX];
 };
 
 static void map_get_value_array(int fd, __u32 key, struct stats_common_s *value)
@@ -94,32 +65,18 @@ static void stats_collect(int map_fd)
 	}
 }
 
-static void stats_poll(int map_fd, __u32 map_type, int interval)
+static void stats_poll(int map_fd, int interval)
 {
-	__u64 utime;
-
-	/* Trick to pretty printf with thousands separators use %' */
-	setlocale(LC_NUMERIC, "en_US");
-
 	while (1) {
-		utime = gettime();
 		stats_collect(map_fd);
-		utime = gettime() - utime;
-	//	printf("interval:  %llu ns, %llu ms\n", utime, utime / 1000000);
 		sleep(interval + 2);
 	}
 }
 
-#ifndef PATH_MAX
-#define PATH_MAX	4096
-#endif
-
-const char *pin_basedir =  "/sys/fs/bpf";
-
 int main(int argc, char **argv)
 {
 	struct bpf_map_info info = { 0 };
-	char pin_dir[PATH_MAX];
+	char pin_dir[1024];
 	int stats_map_fd;
 	int interval = 2;
 	int len;
@@ -140,7 +97,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Use the --dev name as subdir for finding pinned maps */
-	len = snprintf(pin_dir, PATH_MAX, "%s/%s", pin_basedir, cfg.ifname);
+	len = snprintf(pin_dir, sizeof(pin_dir), "%s/%s", PIN_BASEDIR, cfg.ifname);
 	if (len < 0) {
 		fprintf(stderr, "ERR: creating pin dirname\n");
 		return EXIT_FAIL_OPTION;
@@ -172,6 +129,6 @@ int main(int argc, char **argv)
 		return EXIT_FAIL_BPF;
 	}
 
-	stats_poll(stats_map_fd, info.type, interval);
+	stats_poll(stats_map_fd, interval);
 	return EXIT_OK;
 }
