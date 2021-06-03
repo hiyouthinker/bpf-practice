@@ -42,18 +42,52 @@ static void map_get_value_array(int fd, __u32 key, struct pkt_stats *value)
 	}
 }
 
-static bool map_collect(int fd, __u32 key, struct pkt_stats *value)
+static void map_get_value_percpu_array(int fd, __u32 key, struct pkt_stats *value)
 {
-	map_get_value_array(fd, key, value);
+	unsigned int nr_cpus = bpf_num_possible_cpus();
+	struct pkt_stats values[nr_cpus];
+	__u64 sum_bytes = 0;
+	__u64 sum_pkts = 0;
+	int i;
+
+	if ((bpf_map_lookup_elem(fd, &key, values)) != 0) {
+		fprintf(stderr,
+			"ERR: bpf_map_lookup_elem failed key:0x%X\n", key);
+		return;
+	}
+
+	for (i = 0; i < nr_cpus; i++) {
+		sum_pkts  += values[i].rx_packets;
+		sum_bytes += values[i].rx_bytes;
+	}
+	value->rx_packets = sum_pkts;
+	value->rx_bytes   = sum_bytes;
+}
+
+static bool map_collect(int fd, int map_type, __u32 key, struct pkt_stats *value)
+{
+	switch (map_type) {
+	case BPF_MAP_TYPE_ARRAY:
+		map_get_value_array(fd, key, value);
+		break;
+	case BPF_MAP_TYPE_PERCPU_ARRAY:
+		map_get_value_percpu_array(fd, key, value);
+		break;
+	default:
+		fprintf(stderr, "ERR: Unknown map_type(%u) cannot handle\n",
+			map_type);
+		return false;
+		break;
+	}
 	return true;
 }
 
-static void stats_collect(int map_fd, struct pkt_stats value[XDP_ACTION_MAX])
+static void stats_collect(int map_fd, int map_type, struct pkt_stats value[XDP_ACTION_MAX])
 {
 	__u32 key;
 
 	for (key = 0; key < XDP_ACTION_MAX; key++) {
-		map_collect(map_fd, key, &value[key]);
+		map_collect(map_fd, map_type, key, &value[key]);
 	}
 }
 
@@ -65,16 +99,16 @@ static void stats_print(struct pkt_stats value[XDP_ACTION_MAX])
 		char *fmt = "%-12s %'11lld pkts %'11lld bytes\n";
 		const char *action = action2str(key);
 
-		printf(fmt, action, value[key].rx_bytes, value[key].rx_packets);
+		printf(fmt, action, value[key].rx_packets, value[key].rx_bytes);
 	}
 	printf("\n");
 }
 
-static void stats_poll(int map_fd, int interval)
+static void stats_poll(int map_fd, int map_type, int interval)
 {
 	struct pkt_stats value[XDP_ACTION_MAX];
 	while (1) {
-		stats_collect(map_fd, value);
+		stats_collect(map_fd, map_type, value);
 		stats_print(value);
 		sleep(interval + 2);
 	}
@@ -134,6 +168,6 @@ int main(int argc, char **argv)
 			   );
 	}
 
-	stats_poll(stats_map_fd, interval);
+	stats_poll(stats_map_fd, info.type, interval);
 	return EXIT_OK;
 }
