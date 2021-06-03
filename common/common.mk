@@ -24,7 +24,7 @@ COMMON_DIR ?= ../common/
 LIBBPF_DIR ?= ../libbpf/src/
 
 COPY_LOADER ?=
-LOADER_DIR ?= $(COMMON_DIR)/../basic-solutions
+LOADER_DIR ?= $(COMMON_DIR)/../xdp_icmp_echo
 
 OBJECT_LIBBPF = $(LIBBPF_DIR)/libbpf.a
 

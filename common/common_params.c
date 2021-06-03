@@ -147,9 +147,6 @@ void parse_cmdline_args(int argc, char **argv,
 			break;
 		case 'M':
 			cfg->reuse_maps = true;
-#ifdef __BIGBRO__
-			sprintf(cfg->pin_dir, "%s/%s", PIN_BASEDIR, cfg->ifname);
-#endif
 			break;
 		case 'U':
 			cfg->do_unload = true;
