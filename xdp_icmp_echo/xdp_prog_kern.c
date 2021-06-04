@@ -83,7 +83,9 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	int ip_type;
 	int icmp_type;
 	struct iphdr *iphdr;
+#ifdef SUPPORT_IPv6
 	struct ipv6hdr *ipv6hdr;
+#endif
 	__u16 echo_reply, old_csum;
 	struct icmphdr_common *icmphdr;
 	struct icmphdr_common icmphdr_old;
@@ -98,11 +100,15 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 		ip_type = parse_iphdr(&nh, data_end, &iphdr);
 		if (ip_type != IPPROTO_ICMP)
 			goto out;
-	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
+	}
+#ifdef SUPPORT_IPv6
+	else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 		ip_type = parse_ip6hdr(&nh, data_end, &ipv6hdr);
 		if (ip_type != IPPROTO_ICMPV6)
 			goto out;
-	} else {
+	}
+#endif
+	else {
 		goto out;
 	}
 
@@ -117,12 +123,16 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 		/* Swap IP source and destination */
 		swap_src_dst_ipv4(iphdr);
 		echo_reply = ICMP_ECHOREPLY;
-	} else if (eth_type == bpf_htons(ETH_P_IPV6)
+	}
+#ifdef SUPPORT_IPv6
+	else if (eth_type == bpf_htons(ETH_P_IPV6)
 		   && icmp_type == ICMPV6_ECHO_REQUEST) {
 		/* Swap IPv6 source and destination */
 		swap_src_dst_ipv6(ipv6hdr);
 		echo_reply = ICMPV6_ECHO_REPLY;
-	} else {
+	}
+#endif
+	else {
 		goto out;
 	}
 
