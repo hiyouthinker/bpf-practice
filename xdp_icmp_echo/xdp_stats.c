@@ -17,7 +17,7 @@
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "common_kern_user.h"
+#include "structs_kern_user.h"
 
 #include "bpf_util.h" /* bpf_num_possible_cpus */
 
@@ -82,31 +82,57 @@ static bool map_collect(int fd, int map_type, __u32 key, struct pkt_stats *value
 	return true;
 }
 
-static void stats_collect(int map_fd, int map_type, struct pkt_stats value[XDP_ACTION_MAX])
+static void stats_collect(int map_fd, int map_type, struct pkt_stats value[__STATS_GLOBAL_MAX])
 {
 	__u32 key;
 
-	for (key = 0; key < XDP_ACTION_MAX; key++) {
+	for (key = 0; key < __STATS_GLOBAL_MAX; key++) {
 		map_collect(map_fd, map_type, key, &value[key]);
 	}
 }
 
-static void stats_print(struct pkt_stats value[XDP_ACTION_MAX])
+static const char *reason_names[__STATS_GLOBAL_MAX] = {
+	[STATS_GLOBAL_PKT_XDP_PASS]   		= "Pass to Kernel",
+	[STATS_GLOBAL_PKT_XDP_TX]      		= "XDP TX",
+	[STATS_GLOBAL_PKT_L3_UNKNOWN]     	= "Unknown L3 PKT",
+	[STATS_GLOBAL_PKT_ARP]     			= "ARP",
+	[STATS_GLOBAL_PKT_IPv4_UNKNOWN]     = "Unknown IPv4 PKT",
+	[STATS_GLOBAL_PKT_IPv6_UNKNOWN]     = "Unknown IPv6 PKT",
+	[STATS_GLOBAL_PKT_IPv6_NOT_SUPPORT] = "IPv6 (Not Support)",
+	[STATS_GLOBAL_PKT_ICMPv4_ECHO]  	= "ICMPv4 Echo",
+	[STATS_GLOBAL_PKT_ICMPv4_NON_ECHO]	= "ICMPv4 Non-Echo",
+	[STATS_GLOBAL_PKT_TCPv4]   			= "TCPv4",
+	[STATS_GLOBAL_PKT_UDPv4]	   		= "UDPv4",
+	[STATS_GLOBAL_PKT_ICMPv6_ECHO]		= "ICMPv6 Echo",
+	[STATS_GLOBAL_PKT_ICMPv6_NON_ECHO]	= "ICMPv6 Non-Echo",
+	[STATS_GLOBAL_PKT_TCPv6]			= "TCPv6",
+	[STATS_GLOBAL_PKT_UDPv6]			= "UDPv6",
+};
+
+const char *reason2str(__u32 reason)
+{
+	if (reason < __STATS_GLOBAL_MAX)
+		return reason_names[reason];
+	return "Unkown";
+}
+
+static void stats_print(struct pkt_stats value[__STATS_GLOBAL_MAX])
 {
 	__u32 key;
 
-	for (key = 0; key < XDP_ACTION_MAX; key++) {
-		char *fmt = "%-12s %'11lld pkts %'11lld bytes\n";
-		const char *action = action2str(key);
+	printf("==========================================================\n");
+	for (key = 0; key < __STATS_GLOBAL_MAX; key++) {
+		char *fmt = "%-20s %'11lld pkts %'11lld bytes\n";
+		const char *reason = reason2str(key);
 
-		printf(fmt, action, value[key].rx_packets, value[key].rx_bytes);
+		printf(fmt, reason, value[key].rx_packets, value[key].rx_bytes);
 	}
 	printf("\n");
 }
 
 static void stats_poll(int map_fd, int map_type, int interval)
 {
-	struct pkt_stats value[XDP_ACTION_MAX];
+	struct pkt_stats value[__STATS_GLOBAL_MAX];
 	while (1) {
 		stats_collect(map_fd, map_type, value);
 		stats_print(value);
@@ -122,7 +148,7 @@ int main(int argc, char **argv)
 	const struct bpf_map_info map_expect = {
 		.key_size    = sizeof(__u32),
 		.value_size  = sizeof(struct pkt_stats),
-		.max_entries = XDP_ACTION_MAX,
+		.max_entries = __STATS_GLOBAL_MAX,
 	};
 	struct config cfg = {
 		.ifindex   = -1,

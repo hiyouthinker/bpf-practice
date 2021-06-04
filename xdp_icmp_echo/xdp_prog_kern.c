@@ -10,34 +10,31 @@
 
 #include "../common/parsing_helpers.h"
 #include "../common/rewrite_helpers.h"
-#include "common_kern_user.h"
+#include "maps_kern.h"
 
-struct bpf_map_def SEC("maps") xdp_stats_map = {
-	.type        = BPF_MAP_TYPE_PERCPU_ARRAY,
-	.key_size    = sizeof(__u32),
-	.value_size  = sizeof(struct pkt_stats),
-	.max_entries = XDP_ACTION_MAX,
-};
+/* LLVM maps __sync_fetch_and_add() as a built-in function to the BPF atomic add
+ * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
+ */
+#ifndef lock_xadd
+#define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
+#endif
 
 static __always_inline
-__u32 xdp_stats_record_action(struct xdp_md *ctx, __u32 action)
+__u32 __xdp_stats(struct xdp_md *ctx, __u32 key)
 {
-	if (action >= XDP_ACTION_MAX)
-		return XDP_ABORTED;
+	struct pkt_stats *rec;
 
-	/* Lookup in kernel BPF-side return pointer to actual data record */
-	struct pkt_stats *rec = bpf_map_lookup_elem(&xdp_stats_map, &action);
+	if (key >= __STATS_GLOBAL_MAX)
+		return -1;
+
+	rec = bpf_map_lookup_elem(&xdp_stats_map, &key);
 	if (!rec)
-		return XDP_ABORTED;
+		return -1;
 
-	/* BPF_MAP_TYPE_PERCPU_ARRAY returns a data record specific to current
-	 * CPU and XDP hooks runs under Softirq, which makes it safe to update
-	 * without atomic operations.
-	 */
-	rec->rx_packets++;
-	rec->rx_bytes += (ctx->data_end - ctx->data);
+	lock_xadd(&rec->rx_packets, 1);
+	lock_xadd(&rec->rx_bytes, (ctx->data_end - ctx->data));
 
-	return action;
+	return 0;
 }
 
 /*
@@ -86,29 +83,63 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 #ifdef SUPPORT_IPv6
 	struct ipv6hdr *ipv6hdr;
 #endif
-	__u16 echo_reply, old_csum;
+	__u16 echo_reply = ICMP_ECHOREPLY, old_csum;
 	struct icmphdr_common *icmphdr;
 	struct icmphdr_common icmphdr_old;
 	__u32 action = XDP_PASS;
+	__u32 key;
 
 	/* These keep track of the next header type and iterator pointer */
 	nh.pos = data;
 
-	/* Parse Ethernet and IP/IPv6 headers */
 	eth_type = parse_ethhdr(&nh, data_end, &eth);
-	if (eth_type == bpf_htons(ETH_P_IP)) {
-		ip_type = parse_iphdr(&nh, data_end, &iphdr);
-		if (ip_type != IPPROTO_ICMP)
-			goto out;
+
+	if (eth_type == bpf_htons(ETH_P_ARP)) {
+		key = STATS_GLOBAL_PKT_ARP;
+		goto out;
 	}
+	else if (eth_type == bpf_htons(ETH_P_IP)) {
+		ip_type = parse_iphdr(&nh, data_end, &iphdr);
+		switch (ip_type) {
+		case IPPROTO_ICMP:
+			break;
+		case IPPROTO_TCP:
+			key = STATS_GLOBAL_PKT_TCPv4;
+			break;
+		case IPPROTO_UDP:
+			key = STATS_GLOBAL_PKT_UDPv4;
+			break;
+		default:
+			key = STATS_GLOBAL_PKT_IPv4_UNKNOWN;
+			break;
+		}
+		if (ip_type != IPPROTO_ICMP) {
+			goto out;
+		}
+	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 #ifdef SUPPORT_IPv6
-	else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 		ip_type = parse_ip6hdr(&nh, data_end, &ipv6hdr);
+		switch (ip_type) {
+		case IPPROTO_ICMP:
+			break;
+		case IPPROTO_TCP:
+			key = STATS_GLOBAL_PKT_TCPv6;
+			break;
+		case IPPROTO_UDP:
+			key = STATS_GLOBAL_PKT_UDPv6;
+			break;
+		default:
+			key = STATS_GLOBAL_PKT_IPv6_UNKNOWN;
+			break;
+		}
 		if (ip_type != IPPROTO_ICMPV6)
 			goto out;
-	}
+#else
+		key = STATS_GLOBAL_PKT_IPv6_NOT_SUPPORT;
+		goto out;
 #endif
-	else {
+	} else {
+		key = STATS_GLOBAL_PKT_L3_UNKNOWN;
 		goto out;
 	}
 
@@ -119,59 +150,47 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	 * the rest of the structure.
 	 */
 	icmp_type = parse_icmphdr_common(&nh, data_end, &icmphdr);
-	if (eth_type == bpf_htons(ETH_P_IP) && icmp_type == ICMP_ECHO) {
-		/* Swap IP source and destination */
-		swap_src_dst_ipv4(iphdr);
-		echo_reply = ICMP_ECHOREPLY;
+	if (eth_type == bpf_htons(ETH_P_IP)) {
+		switch (icmp_type) {
+		case ICMP_ECHO:
+			key = STATS_GLOBAL_PKT_ICMPv4_ECHO;
+			swap_src_dst_ipv4(iphdr);
+			echo_reply = ICMP_ECHOREPLY;
+			break;
+		default:
+			key = STATS_GLOBAL_PKT_ICMPv4_NON_ECHO;
+			goto out;
+		}
 	}
-#ifdef SUPPORT_IPv6
-	else if (eth_type == bpf_htons(ETH_P_IPV6)
-		   && icmp_type == ICMPV6_ECHO_REQUEST) {
-		/* Swap IPv6 source and destination */
-		swap_src_dst_ipv6(ipv6hdr);
-		echo_reply = ICMPV6_ECHO_REPLY;
-	}
-#endif
 	else {
-		goto out;
+#ifdef SUPPORT_IPv6
+		switch (icmp_type) {
+		case ICMPV6_ECHO_REQUEST:
+			key = STATS_GLOBAL_PKT_ICMPv6_ECHO;
+			swap_src_dst_ipv6(ipv6hdr);
+			echo_reply = ICMPV6_ECHO_REPLY;
+			break;
+		default:
+			key = STATS_GLOBAL_PKT_ICMPv6_NON_ECHO;
+			goto out;
+		}
+#else
+		/* Can't reach here, Trust Me */
+#endif
 	}
 
-	/* Swap Ethernet source and destination */
 	swap_src_dst_mac(eth);
 
-
-	/* Patch the packet and update the checksum.*/
 	old_csum = icmphdr->cksum;
 	icmphdr->cksum = 0;
 	icmphdr_old = *icmphdr;
 	icmphdr->type = echo_reply;
 	icmphdr->cksum = icmp_checksum_diff(~old_csum, icmphdr, &icmphdr_old);
 
-	/* Another, less generic, but a bit more efficient way to update the
-	 * checksum is listed below.  As only one 16-bit word changed, the sum
-	 * can be patched using this formula: sum' = ~(~sum + ~m0 + m1), where
-	 * sum' is a new sum, sum is an old sum, m0 and m1 are the old and new
-	 * 16-bit words, correspondingly. In the formula above the + operation
-	 * is defined as the following function:
-	 *
-	 *     static __always_inline __u16 csum16_add(__u16 csum, __u16 addend)
-	 *     {
-	 *         csum += addend;
-	 *         return csum + (csum < addend);
-	 *     }
-	 *
-	 * So an alternative code to update the checksum might look like this:
-	 *
-	 *     __u16 m0 = * (__u16 *) icmphdr;
-	 *     icmphdr->type = echo_reply;
-	 *     __u16 m1 = * (__u16 *) icmphdr;
-	 *     icmphdr->checksum = ~(csum16_add(csum16_add(~icmphdr->checksum, ~m0), m1));
-	 */
-
 	action = XDP_TX;
-
 out:
-	return xdp_stats_record_action(ctx, action);
+	__xdp_stats(ctx, key);
+	return action;
 }
 
 SEC("xdp_pass")
