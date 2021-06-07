@@ -20,6 +20,85 @@
 #endif
 
 static __always_inline
+int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
+{
+	int ip_type;
+	int icmp_type;
+	int type;
+	struct iphdr *iphdr;
+	struct ipv6hdr *ipv6hdr;
+	struct icmphdr_common *icmphdr;
+
+	if (eth_type == bpf_htons(ETH_P_ARP)) {
+		type = STATS_GLOBAL_PKT_ARP;
+		goto out;
+	}
+	else if (eth_type == bpf_htons(ETH_P_IP)) {
+		ip_type = parse_iphdr(nh, data_end, &iphdr);
+		switch (ip_type) {
+		case IPPROTO_ICMP:
+			break;
+		case IPPROTO_TCP:
+			type = STATS_GLOBAL_PKT_TCPv4;
+			break;
+		case IPPROTO_UDP:
+			type = STATS_GLOBAL_PKT_UDPv4;
+			break;
+		default:
+			type = STATS_GLOBAL_PKT_IPv4_UNKNOWN;
+			break;
+		}
+		if (ip_type != IPPROTO_ICMP) {
+			goto out;
+		}
+	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
+		ip_type = parse_ip6hdr(nh, data_end, &ipv6hdr);
+		switch (ip_type) {
+		case IPPROTO_ICMP:
+			break;
+		case IPPROTO_TCP:
+			type = STATS_GLOBAL_PKT_TCPv6;
+			break;
+		case IPPROTO_UDP:
+			type = STATS_GLOBAL_PKT_UDPv6;
+			break;
+		default:
+			type = STATS_GLOBAL_PKT_IPv6_UNKNOWN;
+			break;
+		}
+		if (ip_type != IPPROTO_ICMPV6)
+			goto out;
+	} else {
+		type = STATS_GLOBAL_PKT_L3_UNKNOWN;
+		goto out;
+	}
+
+	icmp_type = parse_icmphdr_common(nh, data_end, &icmphdr);
+	if (eth_type == bpf_htons(ETH_P_IP)) {
+		switch (icmp_type) {
+		case ICMP_ECHO:
+			type = STATS_GLOBAL_PKT_ICMPv4_ECHO;
+			break;
+		default:
+			type = STATS_GLOBAL_PKT_ICMPv4_NON_ECHO;
+			goto out;
+		}
+	}
+	else {
+		switch (icmp_type) {
+		case ICMPV6_ECHO_REQUEST:
+			type = STATS_GLOBAL_PKT_ICMPv6_ECHO;
+			break;
+		default:
+			type = STATS_GLOBAL_PKT_ICMPv6_NON_ECHO;
+			goto out;
+		}
+	}
+out:
+	return type;
+}
+
+static __always_inline
 __u32 __xdp_stats(struct xdp_md *ctx, __u32 key)
 {
 	struct pkt_stats *rec;
@@ -101,52 +180,26 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 		key = STATS_GLOBAL_PKT_VLAN;
 		__xdp_stats(ctx, key);
 	}
+
+	key = get_pkt_type(&nh, data_end, eth_type);
+
 	if (eth_type == bpf_htons(ETH_P_ARP)) {
-		key = STATS_GLOBAL_PKT_ARP;
 		goto out;
 	}
 	else if (eth_type == bpf_htons(ETH_P_IP)) {
 		ip_type = parse_iphdr(&nh, data_end, &iphdr);
-		switch (ip_type) {
-		case IPPROTO_ICMP:
-			break;
-		case IPPROTO_TCP:
-			key = STATS_GLOBAL_PKT_TCPv4;
-			break;
-		case IPPROTO_UDP:
-			key = STATS_GLOBAL_PKT_UDPv4;
-			break;
-		default:
-			key = STATS_GLOBAL_PKT_IPv4_UNKNOWN;
-			break;
-		}
 		if (ip_type != IPPROTO_ICMP) {
 			goto out;
 		}
 	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 #ifdef SUPPORT_IPv6
 		ip_type = parse_ip6hdr(&nh, data_end, &ipv6hdr);
-		switch (ip_type) {
-		case IPPROTO_ICMP:
-			break;
-		case IPPROTO_TCP:
-			key = STATS_GLOBAL_PKT_TCPv6;
-			break;
-		case IPPROTO_UDP:
-			key = STATS_GLOBAL_PKT_UDPv6;
-			break;
-		default:
-			key = STATS_GLOBAL_PKT_IPv6_UNKNOWN;
-			break;
-		}
 		if (ip_type != IPPROTO_ICMPV6)
 			goto out;
 #else
-		key = STATS_GLOBAL_PKT_IPv6_NOT_SUPPORT;
 		goto out;
 #endif
 	} else {
-		key = STATS_GLOBAL_PKT_L3_UNKNOWN;
 		goto out;
 	}
 
@@ -160,12 +213,10 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	if (eth_type == bpf_htons(ETH_P_IP)) {
 		switch (icmp_type) {
 		case ICMP_ECHO:
-			key = STATS_GLOBAL_PKT_ICMPv4_ECHO;
 			swap_src_dst_ipv4(iphdr);
 			echo_reply = ICMP_ECHOREPLY;
 			break;
 		default:
-			key = STATS_GLOBAL_PKT_ICMPv4_NON_ECHO;
 			goto out;
 		}
 	}
@@ -173,12 +224,10 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 #ifdef SUPPORT_IPv6
 		switch (icmp_type) {
 		case ICMPV6_ECHO_REQUEST:
-			key = STATS_GLOBAL_PKT_ICMPv6_ECHO;
 			swap_src_dst_ipv6(ipv6hdr);
 			echo_reply = ICMPV6_ECHO_REPLY;
 			break;
 		default:
-			key = STATS_GLOBAL_PKT_ICMPv6_NON_ECHO;
 			goto out;
 		}
 #else

@@ -92,18 +92,19 @@ static void stats_collect(int map_fd, int map_type, struct pkt_stats value[__STA
 }
 
 static const char *reason_names[__STATS_GLOBAL_MAX] = {
+#if 0
 	[STATS_GLOBAL_PKT_XDP_PASS]   		= "Pass to Kernel",
 	[STATS_GLOBAL_PKT_XDP_TX]      		= "XDP TX",
+#endif
 	[STATS_GLOBAL_PKT_VLAN]				= "VLAN",
 	[STATS_GLOBAL_PKT_L3_UNKNOWN]     	= "Unknown L3 PKT",
 	[STATS_GLOBAL_PKT_ARP]     			= "ARP",
 	[STATS_GLOBAL_PKT_IPv4_UNKNOWN]     = "Unknown IPv4 PKT",
-	[STATS_GLOBAL_PKT_IPv6_UNKNOWN]     = "Unknown IPv6 PKT",
-	[STATS_GLOBAL_PKT_IPv6_NOT_SUPPORT] = "IPv6 (Not Support)",
 	[STATS_GLOBAL_PKT_ICMPv4_ECHO]  	= "ICMPv4 Echo",
 	[STATS_GLOBAL_PKT_ICMPv4_NON_ECHO]	= "ICMPv4 Non-Echo",
 	[STATS_GLOBAL_PKT_TCPv4]   			= "TCPv4",
 	[STATS_GLOBAL_PKT_UDPv4]	   		= "UDPv4",
+	[STATS_GLOBAL_PKT_IPv6_UNKNOWN]     = "Unknown IPv6 PKT",
 	[STATS_GLOBAL_PKT_ICMPv6_ECHO]		= "ICMPv6 Echo",
 	[STATS_GLOBAL_PKT_ICMPv6_NON_ECHO]	= "ICMPv6 Non-Echo",
 	[STATS_GLOBAL_PKT_TCPv6]			= "TCPv6",
