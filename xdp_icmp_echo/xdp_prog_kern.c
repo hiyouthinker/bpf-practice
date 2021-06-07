@@ -88,12 +88,19 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	struct icmphdr_common icmphdr_old;
 	__u32 action = XDP_PASS;
 	__u32 key;
+	struct collect_vlans vlans;
+
+	__builtin_memset(&vlans, 0, sizeof(vlans));
 
 	/* These keep track of the next header type and iterator pointer */
 	nh.pos = data;
 
-	eth_type = parse_ethhdr(&nh, data_end, &eth);
+	eth_type = parse_ethhdr_and_tag(&nh, data_end, &eth, &vlans);
 
+	if (vlans.id[0] != 0) {
+		key = STATS_GLOBAL_PKT_VLAN;
+		__xdp_stats(ctx, key);
+	}
 	if (eth_type == bpf_htons(ETH_P_ARP)) {
 		key = STATS_GLOBAL_PKT_ARP;
 		goto out;

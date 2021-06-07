@@ -94,6 +94,7 @@ static void stats_collect(int map_fd, int map_type, struct pkt_stats value[__STA
 static const char *reason_names[__STATS_GLOBAL_MAX] = {
 	[STATS_GLOBAL_PKT_XDP_PASS]   		= "Pass to Kernel",
 	[STATS_GLOBAL_PKT_XDP_TX]      		= "XDP TX",
+	[STATS_GLOBAL_PKT_VLAN]				= "VLAN",
 	[STATS_GLOBAL_PKT_L3_UNKNOWN]     	= "Unknown L3 PKT",
 	[STATS_GLOBAL_PKT_ARP]     			= "ARP",
 	[STATS_GLOBAL_PKT_IPv4_UNKNOWN]     = "Unknown IPv4 PKT",
