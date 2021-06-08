@@ -12,6 +12,12 @@
 #include "../common/rewrite_helpers.h"
 #include "maps_kern.h"
 
+/*
+ * verifier complains:
+ *		math between pkt pointer and register with unbounded min value is not allowed
+ */
+#define KENREL_VERIFIER_SHUTUP
+
 /* LLVM maps __sync_fetch_and_add() as a built-in function to the BPF atomic add
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
  */
@@ -28,6 +34,7 @@ int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 	struct iphdr *iphdr;
 	struct ipv6hdr *ipv6hdr;
 	struct icmphdr_common *icmphdr;
+	void *pos = nh->pos;
 
 	if (eth_type == bpf_htons(ETH_P_ARP)) {
 		type = STATS_GLOBAL_PKT_ARP;
@@ -79,8 +86,11 @@ int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 		case ICMP_ECHO:
 			type = STATS_GLOBAL_PKT_ICMPv4_ECHO;
 			break;
+		case ICMP_ECHOREPLY:
+			type = STATS_GLOBAL_PKT_ICMPv4_ECHOREPLY;
+			break;
 		default:
-			type = STATS_GLOBAL_PKT_ICMPv4_NON_ECHO;
+			type = STATS_GLOBAL_PKT_ICMPv4_OTHER;
 			goto out;
 		}
 	}
@@ -89,24 +99,27 @@ int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 		case ICMPV6_ECHO_REQUEST:
 			type = STATS_GLOBAL_PKT_ICMPv6_ECHO;
 			break;
+		case ICMPV6_ECHO_REPLY:
+			type = STATS_GLOBAL_PKT_ICMPv6_ECHOREPLY;
 		default:
-			type = STATS_GLOBAL_PKT_ICMPv6_NON_ECHO;
+			type = STATS_GLOBAL_PKT_ICMPv6_OTHER;
 			goto out;
 		}
 	}
 out:
+	nh->pos = pos;
 	return type;
 }
 
 static __always_inline
-__u32 __xdp_stats(struct xdp_md *ctx, __u32 key)
+__u32 xdp_stats_pkt(struct xdp_md *ctx, __u32 key)
 {
 	struct pkt_stats *rec;
 
-	if (key >= __STATS_GLOBAL_MAX)
+	if (key >= __STATS_GLOBAL_PKT_MAX)
 		return -1;
 
-	rec = bpf_map_lookup_elem(&xdp_stats_map, &key);
+	rec = bpf_map_lookup_elem(&xdp_stats_pkt_map, &key);
 	if (!rec)
 		return -1;
 
@@ -116,9 +129,63 @@ __u32 __xdp_stats(struct xdp_md *ctx, __u32 key)
 	return 0;
 }
 
+static __always_inline
+__u32 xdp_stats_validity(struct xdp_md *ctx, __u32 key)
+{
+	struct pkt_stats *rec;
+
+	if (key >= __STATS_GLOBAL_PKT_MAX)
+		return -1;
+
+	rec = bpf_map_lookup_elem(&xdp_stats_validity_map, &key);
+	if (!rec)
+		return -1;
+
+	lock_xadd(&rec->rx_packets, 1);
+	lock_xadd(&rec->rx_bytes, (ctx->data_end - ctx->data));
+
+	return 0;
+}
+
+/**
+ * Calculate sum of 16-bit words from `data` of `size` bytes,
+ * Size is assumed to be even, from 0 to MAX_CSUM_BYTES.
+ */
+#define MAX_CSUM_WORDS 32
+#define MAX_CSUM_BYTES (MAX_CSUM_WORDS * 2)
+
+static __always_inline __u32
+sum16(const void* data, __u32 size, const void* data_end)
+{
+    __u32 s = 0, i;
+#pragma unroll
+    for (i = 0; i < MAX_CSUM_WORDS; i++) {
+        if (2*i >= size) {
+            return s; /* normal exit */
+        }
+        if (data + 2*i + 1 + 1 > data_end) {
+            return 0; /* should be unreachable */
+        }
+        s += ((const __u16*)data)[i];
+    }
+    return s;
+}
+
+/**
+ * Carry upper bits and compute one's complement for a checksum.
+ */
+static __always_inline __u16
+carry(__u32 csum)
+{
+    csum = (csum & 0xffff) + (csum >> 16);
+    csum = (csum & 0xffff) + (csum >> 16); // loop
+    return ~csum;
+}
+
 /*
  * from xdp_tutorial/packet-solutions/xdp_prog_kern_03.c
  */
+#ifdef SUPPORT_BPF_CSUM
 static __always_inline __u16 csum_fold_helper(__u32 csum)
 {
 	__u32 sum;
@@ -139,14 +206,12 @@ static __always_inline __u16 icmp_checksum_diff(
 		struct icmphdr_common *icmphdr_new,
 		struct icmphdr_common *icmphdr_old)
 {
-#ifdef SUPPORT_BPF_CSUM
 	__u32 csum, size = sizeof(struct icmphdr_common);
 	csum = bpf_csum_diff((__be32 *)icmphdr_old, size, (__be32 *)icmphdr_new, size, seed);
-#else
-	__u32 csum = 0;
-#endif
+
 	return csum_fold_helper(csum);
 }
+#endif
 
 SEC("xdp_icmp_echo")
 int xdp_icmp_echo_func(struct xdp_md *ctx)
@@ -155,16 +220,18 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	void *data = (void *)(long)ctx->data;
 	struct hdr_cursor nh;
 	struct ethhdr *eth;
-	int eth_type;
-	int ip_type;
-	int icmp_type;
+	int eth_type, ip_type, icmp_type;
 	struct iphdr *iphdr;
 #ifdef SUPPORT_IPv6
 	struct ipv6hdr *ipv6hdr;
 #endif
-	__u16 echo_reply = ICMP_ECHOREPLY, old_csum;
 	struct icmphdr_common *icmphdr;
+#ifdef SUPPORT_BPF_CSUM
+	__u16 old_csum;
 	struct icmphdr_common icmphdr_old;
+#endif
+	__u16 echo_reply = ICMP_ECHOREPLY;
+	__u16 ip_tot_len;
 	__u32 action = XDP_PASS;
 	__u32 key;
 	struct collect_vlans vlans;
@@ -174,11 +241,11 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	/* These keep track of the next header type and iterator pointer */
 	nh.pos = data;
 
-	eth_type = parse_ethhdr_and_tag(&nh, data_end, &eth, &vlans);
+	eth_type = parse_ethhdr_vlan(&nh, data_end, &eth, &vlans);
 
 	if (vlans.id[0] != 0) {
 		key = STATS_GLOBAL_PKT_VLAN;
-		__xdp_stats(ctx, key);
+		xdp_stats_pkt(ctx, key);
 	}
 
 	key = get_pkt_type(&nh, data_end, eth_type);
@@ -188,12 +255,36 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	}
 	else if (eth_type == bpf_htons(ETH_P_IP)) {
 		ip_type = parse_iphdr(&nh, data_end, &iphdr);
+		if (ip_type == -1) {
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			goto out;
+		}
+		ip_tot_len = bpf_ntohs(iphdr->tot_len);
+		if (ip_tot_len < iphdr->ihl * 4) {
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			goto out;
+		}
+#ifdef KENREL_VERIFIER_SHUTUP
+		if (ip_tot_len & 0x8000) {
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			goto out;
+		}
+		ip_tot_len &= 0x7FFF;
+#endif
+		if (((char *)iphdr + ip_tot_len) > data_end) {
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			goto out;
+		}
 		if (ip_type != IPPROTO_ICMP) {
 			goto out;
 		}
 	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 #ifdef SUPPORT_IPv6
 		ip_type = parse_ip6hdr(&nh, data_end, &ipv6hdr);
+		if (ip_type == -1) {
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv6_HEADER_MALFORMATION);
+			goto out;
+		}
 		if (ip_type != IPPROTO_ICMPV6)
 			goto out;
 #else
@@ -237,15 +328,21 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 
 	swap_src_dst_mac(eth);
 
+#ifdef SUPPORT_BPF_CSUM
 	old_csum = icmphdr->cksum;
 	icmphdr->cksum = 0;
 	icmphdr_old = *icmphdr;
 	icmphdr->type = echo_reply;
 	icmphdr->cksum = icmp_checksum_diff(~old_csum, icmphdr, &icmphdr_old);
+#else
+	icmphdr->type = echo_reply;
+	icmphdr->cksum = 0;
+	icmphdr->cksum = carry(sum16(icmphdr, iphdr->tot_len - iphdr->ihl * 4, data_end));
+#endif
 
 	action = XDP_TX;
 out:
-	__xdp_stats(ctx, key);
+	xdp_stats_pkt(ctx, key);
 	return action;
 }
 

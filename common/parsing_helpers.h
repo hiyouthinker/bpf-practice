@@ -129,14 +129,6 @@ static __always_inline int parse_ethhdr(struct hdr_cursor *nh,
 	return parse_ethhdr_vlan(nh, data_end, ethhdr, NULL);
 }
 
-static __always_inline int parse_ethhdr_and_tag(struct hdr_cursor *nh,
-					void *data_end,
-					struct ethhdr **ethhdr, struct collect_vlans *vlans)
-{
-	/* Expect compiler removes the code that collects VLAN ids */
-	return parse_ethhdr_vlan(nh, data_end, ethhdr, vlans);
-}
-
 static __always_inline int parse_ip6hdr(struct hdr_cursor *nh,
 					void *data_end,
 					struct ipv6hdr **ip6hdr)

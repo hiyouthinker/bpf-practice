@@ -82,62 +82,89 @@ static bool map_collect(int fd, int map_type, __u32 key, struct pkt_stats *value
 	return true;
 }
 
-static void stats_collect(int map_fd, int map_type, struct pkt_stats value[__STATS_GLOBAL_MAX])
+static void stats_collect(int map_fd, int map_type, struct pkt_stats *value, int flag)
 {
 	__u32 key;
 
-	for (key = 0; key < __STATS_GLOBAL_MAX; key++) {
-		map_collect(map_fd, map_type, key, &value[key]);
+	if (!flag) {
+		for (key = 0; key < __STATS_GLOBAL_PKT_MAX; key++) {
+			map_collect(map_fd, map_type, key, &value[key]);
+		}
+	} else {
+		for (key = 0; key < __STATS_GLOBAL_VALIDITY_MAX; key++) {
+			map_collect(map_fd, map_type, key, &value[key]);
+		}
 	}
 }
 
-static const char *reason_names[__STATS_GLOBAL_MAX] = {
-#if 0
-	[STATS_GLOBAL_PKT_XDP_PASS]   		= "Pass to Kernel",
-	[STATS_GLOBAL_PKT_XDP_TX]      		= "XDP TX",
-#endif
+static const char *reason_names_pkt[__STATS_GLOBAL_PKT_MAX] = {
 	[STATS_GLOBAL_PKT_VLAN]				= "VLAN",
 	[STATS_GLOBAL_PKT_L3_UNKNOWN]     	= "Unknown L3 PKT",
 	[STATS_GLOBAL_PKT_ARP]     			= "ARP",
 	[STATS_GLOBAL_PKT_IPv4_UNKNOWN]     = "Unknown IPv4 PKT",
 	[STATS_GLOBAL_PKT_ICMPv4_ECHO]  	= "ICMPv4 Echo",
-	[STATS_GLOBAL_PKT_ICMPv4_NON_ECHO]	= "ICMPv4 Non-Echo",
+	[STATS_GLOBAL_PKT_ICMPv4_ECHOREPLY]	= "ICMPv4 Reply",
+	[STATS_GLOBAL_PKT_ICMPv4_OTHER]		= "ICMPv4 Other",
 	[STATS_GLOBAL_PKT_TCPv4]   			= "TCPv4",
 	[STATS_GLOBAL_PKT_UDPv4]	   		= "UDPv4",
 	[STATS_GLOBAL_PKT_IPv6_UNKNOWN]     = "Unknown IPv6 PKT",
 	[STATS_GLOBAL_PKT_ICMPv6_ECHO]		= "ICMPv6 Echo",
-	[STATS_GLOBAL_PKT_ICMPv6_NON_ECHO]	= "ICMPv6 Non-Echo",
+	[STATS_GLOBAL_PKT_ICMPv6_ECHOREPLY]	= "ICMPv6 Reply",
+	[STATS_GLOBAL_PKT_ICMPv6_OTHER]		= "ICMPv6 Other",
 	[STATS_GLOBAL_PKT_TCPv6]			= "TCPv6",
 	[STATS_GLOBAL_PKT_UDPv6]			= "UDPv6",
 };
 
-const char *reason2str(__u32 reason)
+static const char *reason_names_validity[__STATS_GLOBAL_VALIDITY_MAX] = {
+	[STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR]					= "IPv4 Invalid Header Length",
+	[STATS_GLOBAL_VALIDITY_IPv6_HEADER_MALFORMATION]     	= "Abnormal IPv6 Header",
+};
+
+static const char *reason2str(__u32 reason, int flag)
 {
-	if (reason < __STATS_GLOBAL_MAX)
-		return reason_names[reason];
+	if (!flag) {
+		if (reason < __STATS_GLOBAL_PKT_MAX)
+			return reason_names_pkt[reason];
+	}
+	else {
+		if (reason < __STATS_GLOBAL_VALIDITY_MAX)
+			return reason_names_validity[reason];
+	}
 	return "Unkown";
 }
 
-static void stats_print(struct pkt_stats value[__STATS_GLOBAL_MAX])
+static void stats_print(struct pkt_stats *value, int flag)
 {
 	__u32 key;
 
-	printf("==========================================================\n");
-	for (key = 0; key < __STATS_GLOBAL_MAX; key++) {
-		char *fmt = "%-20s %'11lld pkts %'11lld bytes\n";
-		const char *reason = reason2str(key);
+	if (!flag) {
+		for (key = 0; key < __STATS_GLOBAL_PKT_MAX; key++) {
+			char *fmt = "%-50s %'11lld pkts %'11lld bytes\n";
+			const char *reason = reason2str(key, 0);
 
-		printf(fmt, reason, value[key].rx_packets, value[key].rx_bytes);
+			printf(fmt, reason, value[key].rx_packets, value[key].rx_bytes);
+		}
+	} else {
+		for (key = 0; key < __STATS_GLOBAL_VALIDITY_MAX; key++) {
+			char *fmt = "%-50s %'11lld pkts %'11lld bytes\n";
+			const char *reason = reason2str(key, 1);
+		
+			printf(fmt, reason, value[key].rx_packets, value[key].rx_bytes);
+		}
 	}
 	printf("\n");
 }
 
-static void stats_poll(int map_fd, int map_type, int interval)
+static void stats_poll(int map_fd1, int map_type1, int map_fd2, int map_type2, int interval)
 {
-	struct pkt_stats value[__STATS_GLOBAL_MAX];
+	struct pkt_stats value[__STATS_GLOBAL_PKT_MAX];
 	while (1) {
-		stats_collect(map_fd, map_type, value);
-		stats_print(value);
+		printf("===============================================================================\n");
+		stats_collect(map_fd1, map_type1, value, 0);
+		stats_print(value, 0);
+		sleep(1);
+		stats_collect(map_fd2, map_type2, value, 1);
+		stats_print(value, 1);
 		sleep(interval + 2);
 	}
 }
@@ -146,18 +173,23 @@ int main(int argc, char **argv)
 {
 	static const char *__doc__ = "XDP stats program\n"
 		" - Finding xdp_stats_map via --dev name info\n";
-	struct bpf_map_info info = { 0 };
-	const struct bpf_map_info map_expect = {
+	struct bpf_map_info pkt_info = {0}, validity_info = {0};
+	const struct bpf_map_info pkt_map_expect = {
 		.key_size    = sizeof(__u32),
 		.value_size  = sizeof(struct pkt_stats),
-		.max_entries = __STATS_GLOBAL_MAX,
+		.max_entries = __STATS_GLOBAL_PKT_MAX,
+	};
+	const struct bpf_map_info validity_map_expect = {
+		.key_size	 = sizeof(__u32),
+		.value_size  = sizeof(struct pkt_stats),
+		.max_entries = __STATS_GLOBAL_VALIDITY_MAX,
 	};
 	struct config cfg = {
 		.ifindex   = -1,
 		.do_unload = false,
 	};
 	char pin_dir[1024];
-	int stats_map_fd;
+	int pkt_map_fd, validity_map_fd;
 	int interval = 2;
 	int len, err;
 
@@ -174,16 +206,28 @@ int main(int argc, char **argv)
 		fprintf(stderr, "ERR: creating pin dirname\n");
 		return EXIT_FAIL_OPTION;
 	}
-
-	stats_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_map", &info);
-	if (stats_map_fd < 0) {
+	pkt_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_pkt_map", &pkt_info);
+	if (pkt_map_fd < 0) {
 		return EXIT_FAIL_BPF;
 	}
 
-	err = check_map_fd_info(&info, &map_expect);
+	err = check_map_fd_info(&pkt_info, &pkt_map_expect);
 	if (err) {
 		fprintf(stderr, "ERR: map via FD not compatible\n");
-		close(stats_map_fd);
+		close(pkt_map_fd);
+		return err;
+	}
+	validity_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_validity_map", &validity_info);
+	if (validity_map_fd < 0) {
+		close(pkt_map_fd);
+		return EXIT_FAIL_BPF;
+	}
+
+	err = check_map_fd_info(&validity_info, &validity_map_expect);
+	if (err) {
+		fprintf(stderr, "ERR: map via FD not compatible\n");
+		close(pkt_map_fd);
+		close(validity_map_fd);
 		return err;
 	}
 
@@ -191,11 +235,14 @@ int main(int argc, char **argv)
 		printf("\nCollecting stats from BPF map\n");
 		printf(" - BPF map (bpf_map_type:%d) id:%d name:%s"
 			   " key_size:%d value_size:%d max_entries:%d\n",
-			   info.type, info.id, info.name,
-			   info.key_size, info.value_size, info.max_entries
-			   );
+			   pkt_info.type, pkt_info.id, pkt_info.name,
+			   pkt_info.key_size, pkt_info.value_size, pkt_info.max_entries);
+		printf(" - BPF map (bpf_map_type:%d) id:%d name:%s"
+			   " key_size:%d value_size:%d max_entries:%d\n",
+			   validity_info.type, validity_info.id, validity_info.name,
+			   validity_info.key_size, validity_info.value_size, validity_info.max_entries);
 	}
 
-	stats_poll(stats_map_fd, info.type, interval);
+	stats_poll(pkt_map_fd, pkt_info.type, validity_map_fd, validity_info.type, interval);
 	return EXIT_OK;
 }
