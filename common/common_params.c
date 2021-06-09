@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqPD:",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqvPD:",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -158,6 +158,9 @@ void parse_cmdline_args(int argc, char **argv,
 			verbose = false;
 			break;
 #ifdef __BIGBRO__
+		case 'v':
+			cfg->verbose = 1;
+			break;
 		case 'P':
 			cfg->pin_map = 1;
 			break;

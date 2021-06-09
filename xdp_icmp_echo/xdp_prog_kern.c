@@ -16,7 +16,17 @@
  * verifier complains:
  *		math between pkt pointer and register with unbounded min value is not allowed
  */
-#define KENREL_VERIFIER_SHUTUP
+#define KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
+/*
+ * unreachable insn 277
+ */
+#define KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
+
+#define SUPPORT_UDP_CHECKSUM
+
+#define TAG_FROM_CLIENT		705
+#define TAG_FROM_SERVER		708
+#define TAG_TO_NEXTHOP		708
 
 /* LLVM maps __sync_fetch_and_add() as a built-in function to the BPF atomic add
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
@@ -109,6 +119,24 @@ int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 out:
 	nh->pos = pos;
 	return type;
+}
+
+static __always_inline
+__u32 xdp_stats_action(struct xdp_md *ctx, __u32 key)
+{
+	struct pkt_stats *rec;
+
+	if (key >= __XDP_ACTION_MAX)
+		return -1;
+
+	rec = bpf_map_lookup_elem(&xdp_stats_action_map, &key);
+	if (!rec)
+		return -1;
+
+	lock_xadd(&rec->rx_packets, 1);
+	lock_xadd(&rec->rx_bytes, (ctx->data_end - ctx->data));
+
+	return 0;
 }
 
 static __always_inline
@@ -213,6 +241,119 @@ static __always_inline __u16 icmp_checksum_diff(
 }
 #endif
 
+static __always_inline int ip_decrease_ttl(struct iphdr *iph)
+{
+	__u32 check = iph->check;
+	check += bpf_htons(0x0100);
+	iph->check = (__u16)(check + (check >= 0xFFFF));
+	return --iph->ttl;
+}
+
+SEC("xdp_ip_forward")
+int xdp_ip_forward_func(struct xdp_md *ctx)
+{
+	void *data_end = (void *)(long)ctx->data_end;
+	void *data = (void *)(long)ctx->data;
+	struct hdr_cursor nh;
+	struct ethhdr *eth;
+	struct iphdr *iphdr;
+	int eth_type;
+	__u32 action = XDP_PASS;
+	__u32 key1, key2;
+	struct collect_vlans vlans;
+	struct vlan_hdr *vlh;
+	char smac[ETH_ALEN] = {0x9c, 0x69, 0xb4, 0x60, 0x35, 0x61};
+	char dmac[ETH_ALEN] = {0x68, 0x91, 0xd0, 0x61, 0x94, 0xca};
+	__be32 snat_ip = bpf_htonl(0xAC320249);
+	__be32 dnat_ip = bpf_htonl(0xAC320148);
+	int l4proto;
+
+	xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_ALL);
+
+	__builtin_memset(&vlans, 0, sizeof(vlans));
+
+	/* These keep track of the next header type and iterator pointer */
+	nh.pos = data;
+
+	eth_type = parse_ethhdr_vlan(&nh, data_end, &eth, &vlans);
+	if (vlans.id[0] != 0) {
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN);
+	}
+
+	key1 = get_pkt_type(&nh, data_end, eth_type);
+
+	switch (vlans.id[0]) {
+	case 0:
+		key2 = STATS_GLOBAL_VALIDITY_NONE_TAG;
+		goto error;
+	case TAG_FROM_CLIENT:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN_FROM_CLIENT);
+		break;
+	case TAG_FROM_SERVER:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN_FROM_SERVER);
+		break;
+	default:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_OTHER_VLAN);
+		key2 = STATS_GLOBAL_VALIDITY_UNKNOWN_TAG;
+		goto error;
+	}
+
+	if (!eth || ((eth + 1) > data_end)) {
+		key2 = STATS_GLOBAL_VALIDITY_ETHERNET_HEADER_MALFORM;
+		goto error;
+	}
+
+	if (eth_type != bpf_htons(ETH_P_IP)) {
+		goto done;
+	}
+
+	l4proto = parse_iphdr(&nh, data_end, &iphdr);
+	if (l4proto == -1) {
+		key2 = STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM;
+		goto error;
+	} else if (l4proto == IPPROTO_UDP) {
+		struct udphdr *uhdr;
+		if (parse_udphdr(&nh, data_end, &uhdr) < 0) {
+			key2 = STATS_GLOBAL_VALIDITY_UDP_HEADER_MALFORM;
+			goto error;
+		}
+#ifdef SUPPORT_UDP_CHECKSUM
+		uhdr->check = 0;
+#else
+		uhdr->check = 0;
+#endif
+	}
+
+	/* Build Ethernet Header */
+	vlh = (struct vlan_hdr *)(eth + 1);
+	vlh->h_vlan_TCI = bpf_htons(TAG_TO_NEXTHOP | (vlh->h_vlan_TCI & ~VLAN_VID_MASK));
+	__builtin_memcpy(eth->h_source, smac, ETH_ALEN);
+	__builtin_memcpy(eth->h_dest, dmac, ETH_ALEN);
+
+	if (vlans.id[0] == TAG_FROM_CLIENT)
+		/* SNAT */
+		iphdr->saddr = snat_ip;
+	else
+		iphdr->daddr = dnat_ip;
+
+    /* Update IP checksum */
+	iphdr->check = 0;
+#ifdef KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
+	iphdr->check = carry(sum16(iphdr, sizeof(*iphdr), data_end));
+#else
+	iphdr->check = carry(sum16(iphdr, iphdr->ihl * 4, data_end));
+#endif
+	ip_decrease_ttl(iphdr);
+	action = XDP_TX;
+done:
+	xdp_stats_pkt(ctx, key1);
+	xdp_stats_action(ctx, action);
+	return action;
+error:
+	xdp_stats_validity(ctx, key2);
+	goto done;
+}
+
 SEC("xdp_icmp_echo")
 int xdp_icmp_echo_func(struct xdp_md *ctx)
 {
@@ -256,23 +397,23 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	else if (eth_type == bpf_htons(ETH_P_IP)) {
 		ip_type = parse_iphdr(&nh, data_end, &iphdr);
 		if (ip_type == -1) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
 		ip_tot_len = bpf_ntohs(iphdr->tot_len);
 		if (ip_tot_len < iphdr->ihl * 4) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
-#ifdef KENREL_VERIFIER_SHUTUP
+#ifdef KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
 		if (ip_tot_len & 0x8000) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
 		ip_tot_len &= 0x7FFF;
 #endif
 		if (((char *)iphdr + ip_tot_len) > data_end) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_IHL_ERROR);
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
 		if (ip_type != IPPROTO_ICMP) {
@@ -282,7 +423,7 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 #ifdef SUPPORT_IPv6
 		ip_type = parse_ip6hdr(&nh, data_end, &ipv6hdr);
 		if (ip_type == -1) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv6_HEADER_MALFORMATION);
+			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv6_HEADER_MALFORM);
 			goto out;
 		}
 		if (ip_type != IPPROTO_ICMPV6)
@@ -321,8 +462,6 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 		default:
 			goto out;
 		}
-#else
-		/* Can't reach here, Trust Me */
 #endif
 	}
 
@@ -337,7 +476,7 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 #else
 	icmphdr->type = echo_reply;
 	icmphdr->cksum = 0;
-	icmphdr->cksum = carry(sum16(icmphdr, iphdr->tot_len - iphdr->ihl * 4, data_end));
+	icmphdr->cksum = carry(sum16(icmphdr, ip_tot_len - iphdr->ihl * 4, data_end));
 #endif
 
 	action = XDP_TX;
