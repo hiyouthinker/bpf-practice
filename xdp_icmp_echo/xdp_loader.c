@@ -52,6 +52,9 @@ static const struct option_wrapper long_options[] = {
 	{{"quiet",       no_argument,		NULL, 'q' },
 	 "Quiet mode (no output)"},
 
+	{{"verbose",	no_argument,		NULL, 'v' },
+		 "set level to debug"},
+
 	{{"filename",    required_argument,	NULL,  1  },
 	 "Load program from <file>", "<file>"},
 
@@ -97,6 +100,12 @@ static int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
 	return 0;
 }
 
+static int my_print(enum libbpf_print_level level, const char *format,
+		     va_list args)
+{
+	return vfprintf(stderr, format, args);
+}
+
 int main(int argc, char **argv)
 {
 	static const char *__doc__ = "XDP loader\n"
@@ -112,6 +121,10 @@ int main(int argc, char **argv)
 
 	strcpy(cfg.filename, "xdp_prog_kern.o");
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
+
+	if (cfg.verbose) {
+		libbpf_set_print(my_print);
+	}
 
 	if (cfg.ifindex == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n\n");

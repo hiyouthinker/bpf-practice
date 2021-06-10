@@ -198,11 +198,9 @@ static void stats_poll(int map_fd1, int map_type1
 		printf("===============================================================================\n");
 		stats_collect(map_fd1, map_type1, value, 0);
 		stats_print(value, 0, verbose);
-	//	sleep(1);
 		printf("---------------------------\n");
 		stats_collect(map_fd2, map_type2, value, 1);
 		stats_print(value, 1, verbose);
-	//	sleep(1);
 		printf("---------------------------\n");
 		stats_collect(map_fd3, map_type3, value, 2);
 		stats_print(value, 2, verbose);

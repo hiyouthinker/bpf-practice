@@ -482,6 +482,7 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	action = XDP_TX;
 out:
 	xdp_stats_pkt(ctx, key);
+	xdp_stats_action(ctx, action);
 	return action;
 }
 
