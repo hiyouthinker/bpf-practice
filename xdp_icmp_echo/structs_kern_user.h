@@ -10,6 +10,31 @@
 #define __XDP_ACTION_MAX 		(XDP_REDIRECT + 1)
 #define MAX_SUPPORTED_CPUS 		128
 
+struct flow_key {
+	union {
+		__be32 src;
+		__be32 srcv6[4];
+	};
+	union {
+		__be32 dst;
+		__be32 dstv6[4];
+	};
+	union {
+		__u32 ports;
+		__u16 port16[2];
+	};
+	__u8 proto;
+};
+
+struct fullnat_info_s {
+	__u32 src;
+	__u32 dst;
+	union {
+		__u32 ports;
+		__u16 port16[2];
+	};
+};
+
 struct pkt_stats {
 	__u64 rx_packets;
 	__u64 rx_bytes;
