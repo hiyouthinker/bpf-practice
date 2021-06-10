@@ -250,7 +250,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "ERR: creating pin dirname\n");
 		return EXIT_FAIL_OPTION;
 	}
-	pkt_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_pkt_map", &pkt_info);
+	pkt_map_fd = open_bpf_map_file(pin_dir, "stats_pkt", &pkt_info);
 	if (pkt_map_fd < 0) {
 		return EXIT_FAIL_BPF;
 	}
@@ -261,7 +261,7 @@ int main(int argc, char **argv)
 		close(pkt_map_fd);
 		return err;
 	}
-	validity_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_validity_map", &validity_info);
+	validity_map_fd = open_bpf_map_file(pin_dir, "stats_validity", &validity_info);
 	if (validity_map_fd < 0) {
 		close(pkt_map_fd);
 		return EXIT_FAIL_BPF;
@@ -275,7 +275,7 @@ int main(int argc, char **argv)
 		return err;
 	}
 
-	action_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_action_map", &action_info);
+	action_map_fd = open_bpf_map_file(pin_dir, "stats_action", &action_info);
 	if (action_map_fd < 0) {
 		close(pkt_map_fd);
 		close(validity_map_fd);

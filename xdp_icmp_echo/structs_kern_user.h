@@ -5,7 +5,10 @@
 #ifndef __COMMON_KERN_USER_H
 #define __COMMON_KERN_USER_H
 
-#define __XDP_ACTION_MAX (XDP_REDIRECT + 1)
+#define SESSION_NAT_INNER_MAP_NAME			"session_nat_table_inner"
+
+#define __XDP_ACTION_MAX 		(XDP_REDIRECT + 1)
+#define MAX_SUPPORTED_CPUS 		128
 
 struct pkt_stats {
 	__u64 rx_packets;

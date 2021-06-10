@@ -233,7 +233,52 @@ struct bpf_object *load_bpf_object_file_reuse_maps(const char *file,
 	return obj;
 }
 
-struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg)
+static struct bpf_object * __load_bpf_object_file(char *filename
+							, int (*create)(struct bpf_object *obj)
+							, int (*update)(struct bpf_object *obj))
+{
+	struct bpf_object_open_attr open_attr = {};
+	struct bpf_object *obj;
+	int err;
+
+	if (!filename) {
+		fprintf(stderr, "ERR: filename is null\n");
+		return NULL;
+	}
+	open_attr.file = filename;
+	open_attr.prog_type = BPF_PROG_TYPE_XDP;
+
+	obj = bpf_object__open_xattr(&open_attr);
+	if (IS_ERR_OR_NULL(obj)) {
+		fprintf(stderr, "ERR: loading BPF-OBJ file(%s) (%d): %s\n",
+			filename, ENOENT, strerror(-ENOENT));
+		return NULL;
+	}
+
+	if (create) {
+		if (create(obj) < 0)
+			return NULL;
+	}
+
+	err = bpf_object__load(obj);
+	if (err) {
+		bpf_object__close(obj);
+		fprintf(stderr, "ERR: loading BPF-OBJ file(%s) (%d): %s\n",
+			filename, EINVAL, strerror(-EINVAL));
+		return NULL;
+	}
+
+	if (update) {
+		if (update(obj) < 0)
+			return NULL;
+	}
+
+	return obj;
+}
+
+struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg
+						, int (*create)(struct bpf_object *obj)
+						, int (*update)(struct bpf_object *obj))
 {
 	struct bpf_program *bpf_prog;
 	struct bpf_object *bpf_obj;
@@ -251,7 +296,11 @@ struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg)
 							  offload_ifindex,
 							  cfg->pin_dir);
 	else
+#ifdef __BIGBRO__
+		bpf_obj = __load_bpf_object_file(cfg->filename, create, update);
+#else
 		bpf_obj = load_bpf_object_file(cfg->filename, offload_ifindex);
+#endif
 	if (!bpf_obj) {
 		fprintf(stderr, "ERR: loading file: %s\n", cfg->filename);
 		exit(EXIT_FAIL_BPF);

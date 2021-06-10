@@ -129,7 +129,7 @@ __u32 xdp_stats_action(struct xdp_md *ctx, __u32 key)
 	if (key >= __XDP_ACTION_MAX)
 		return -1;
 
-	rec = bpf_map_lookup_elem(&xdp_stats_action_map, &key);
+	rec = bpf_map_lookup_elem(&stats_action, &key);
 	if (!rec)
 		return -1;
 
@@ -147,7 +147,7 @@ __u32 xdp_stats_pkt(struct xdp_md *ctx, __u32 key)
 	if (key >= __STATS_GLOBAL_PKT_MAX)
 		return -1;
 
-	rec = bpf_map_lookup_elem(&xdp_stats_pkt_map, &key);
+	rec = bpf_map_lookup_elem(&stats_pkt, &key);
 	if (!rec)
 		return -1;
 
@@ -165,7 +165,7 @@ __u32 xdp_stats_validity(struct xdp_md *ctx, __u32 key)
 	if (key >= __STATS_GLOBAL_PKT_MAX)
 		return -1;
 
-	rec = bpf_map_lookup_elem(&xdp_stats_validity_map, &key);
+	rec = bpf_map_lookup_elem(&stats_validity, &key);
 	if (!rec)
 		return -1;
 

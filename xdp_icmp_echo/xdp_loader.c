@@ -19,9 +19,14 @@
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
+#include <linux/err.h>	/* for IS_ERR_OR_NULL */
+
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
 #include "../common/common_libbpf.h"
+#include "structs_kern_user.h"
+
+static int inner_map_fd[MAX_SUPPORTED_CPUS];
 
 static const struct option_wrapper long_options[] = {
 
@@ -76,20 +81,14 @@ static int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
 			return -EINVAL;
 		else if (len >= sizeof(buf))
 			return -ENAMETOOLONG;
-		break;
-	}
-
-	if (access(buf, F_OK ) != -1 ) {
-		if (verbose)
-			printf(" - Unpinning (remove) prev maps in %s/\n",
-			       cfg->pin_dir);
-
-		err = bpf_object__unpin_maps(obj, cfg->pin_dir);
-		if (err) {
-			fprintf(stderr, "ERR: UNpinning maps in %s\n", cfg->pin_dir);
+		if (access(buf, F_OK ) < 0)
+			continue;
+		if (unlink(buf) < 0) {
+			fprintf(stderr, "ERR: UNpinning maps in %s\n", buf);
 			return EXIT_FAIL_BPF;
 		}
 	}
+
 	if (verbose)
 		printf(" - Pinning maps in %s/\n", cfg->pin_dir);
 
@@ -97,6 +96,131 @@ static int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
 	if (err)
 		return EXIT_FAIL_BPF;
 
+	return 0;
+}
+
+static int map_in_map_inner_create(struct bpf_object *obj)
+{
+	struct bpf_map *outer_map;
+	int cpu_num = libbpf_num_possible_cpus();
+	int cpu = 0, err;
+
+	if (cpu_num < 0) {
+		fprintf(stderr, "ERROR: Failed to get the cpu number\n");
+		return -1;
+	}
+	if (cpu_num > MAX_SUPPORTED_CPUS) {
+		fprintf(stderr, "ERROR: cpu number %d > %d, please correct MAX_SUPPORTED_CPUSr\n"
+			, cpu_num, MAX_SUPPORTED_CPUS);
+		return -1;
+	}
+
+	for (cpu = 0; cpu < cpu_num; cpu++) {
+		inner_map_fd[cpu] = bpf_create_map_name(BPF_MAP_TYPE_LRU_HASH, SESSION_NAT_INNER_MAP_NAME
+							, sizeof(struct flow_key), sizeof(struct fullnat_info_s), 1024, 0);
+		if (inner_map_fd[cpu] < 0) {
+			fprintf(stderr, "ERROR: creating map %s failed\n", SESSION_NAT_INNER_MAP_NAME);
+			goto error;
+		}
+	}
+
+	outer_map = bpf_object__find_map_by_name(obj, "session_nat_table_outer");
+	if (IS_ERR_OR_NULL(outer_map)) {
+		printf("Failed to get map %s\n", "session_nat_table_outer");
+		goto error;
+	}
+	err = bpf_map__set_inner_map_fd(outer_map, inner_map_fd[0]);
+	if (err) {
+		printf("Failed to set inner_map_fd for array of maps\n");
+		goto error;
+	}
+	return 0;
+error:
+	while (cpu--) {
+		close(inner_map_fd[cpu]);
+	}
+	return -1;
+}
+
+static int map_in_map_inner_unpin(struct config *cfg)
+{
+	char map_path[512];
+	int cpu_num = libbpf_num_possible_cpus();
+	int cpu = cpu_num, err = 0, len;
+
+	for (cpu = 0; cpu < cpu_num; cpu++) {
+		len = snprintf(map_path, sizeof(map_path), "%s/%s_cpu%d", cfg->pin_dir, SESSION_NAT_INNER_MAP_NAME, cpu);
+		if (len < 0)
+			return -EINVAL;
+		if (unlink(map_path) < 0) {
+			fprintf(stderr, "ERROR: unlink %s failed, error (%d): %s\n"
+				, map_path, errno, strerror(errno));
+			err = -errno;
+			break;
+		}
+	}
+	return err;
+}
+
+static int map_in_map_inner_pin(struct config *cfg)
+{
+	char map_path[512];
+	int cpu_num = libbpf_num_possible_cpus();
+	int cpu = 0, err, len;
+
+	if (map_in_map_inner_unpin(cfg) < 0) {
+		fprintf(stderr, "ERROR: unlink map failed, error (%d): %s\n"
+				, errno, strerror(errno));
+		return -1;
+	}
+
+	for (cpu = 0; cpu < cpu_num; cpu++) {
+		len = snprintf(map_path, sizeof(map_path), "%s/%s_cpu%d", cfg->pin_dir, SESSION_NAT_INNER_MAP_NAME, cpu);
+		if (len < 0) {
+			err = -EINVAL;
+			goto unpin;
+		}
+		err = bpf_obj_pin(inner_map_fd[cpu], map_path);
+		if (err) {
+			fprintf(stderr, "ERROR: pin %s failed, error (%d): %s\n"
+				, map_path, errno, strerror(errno));
+			goto unpin;
+		}
+	}
+	return 0;
+unpin:
+	while (cpu--) {
+		len = snprintf(map_path, sizeof(map_path), "%s/%s_cpu%d", cfg->pin_dir, SESSION_NAT_INNER_MAP_NAME, cpu);
+		if (len < 0)
+			return -EINVAL;
+		if (unlink(map_path) < 0) {
+			fprintf(stderr, "ERROR: unlink %s failed, error (%d): %s\n"
+				, map_path, errno, strerror(errno));
+			err = -errno;
+			break;
+		}
+	}
+	return err;
+}
+
+static int map_in_map_outer_update(struct bpf_object *obj)
+{
+	int outer_map_fd, err;
+	int cpu_num = libbpf_num_possible_cpus(), cpu;
+
+	outer_map_fd = bpf_object__find_map_fd_by_name(obj, "session_nat_table_outer");
+	if (outer_map_fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "session_nat_table_outer");
+		return -1;
+	}
+
+	for (cpu = 0; cpu < cpu_num; cpu++) {
+		err = bpf_map_update_elem(outer_map_fd, &cpu, &inner_map_fd[cpu], 0);
+		if (err) {
+			fprintf(stderr, "Failed to update array of maps\n");
+			return -1;
+		}
+	}
 	return 0;
 }
 
@@ -111,7 +235,7 @@ int main(int argc, char **argv)
 	static const char *__doc__ = "XDP loader\n"
 		" - Allows selecting BPF section --progsec name to XDP-attach to --dev\n";
 	struct bpf_object *bpf_obj;
-	int err, len;
+	int len;
 
 	struct config cfg = {
 		.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE,
@@ -141,7 +265,7 @@ int main(int argc, char **argv)
 		return EXIT_FAIL_OPTION;
 	}
 
-	bpf_obj = load_bpf_and_xdp_attach(&cfg);
+	bpf_obj = load_bpf_and_xdp_attach(&cfg, map_in_map_inner_create, map_in_map_outer_update);
 	if (!bpf_obj)
 		return EXIT_FAIL_BPF;
 
@@ -153,12 +277,13 @@ int main(int argc, char **argv)
 	}
 
 	if (!cfg.reuse_maps) {
-		err = pin_maps_in_bpf_object(bpf_obj, &cfg);
-		if (err) {
+		int err1, err2;
+		err1 = pin_maps_in_bpf_object(bpf_obj, &cfg);
+		err2 = map_in_map_inner_pin(&cfg);
+		if (err1 || err2) {
 			fprintf(stderr, "ERR: pinning maps\n");
-			return err;
+			return err1;
 		}
 	}
-
 	return EXIT_OK;
 }
