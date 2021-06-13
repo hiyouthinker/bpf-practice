@@ -399,8 +399,7 @@ int check_map_fd_info(const struct bpf_map_info *info,
 }
 
 int open_bpf_map_file(const char *pin_dir,
-		      const char *mapname,
-		      struct bpf_map_info *info)
+		      const char *mapname, struct bpf_map_info *info)
 {
 	char filename[PATH_MAX];
 	int err, len, fd;
@@ -423,9 +422,9 @@ int open_bpf_map_file(const char *pin_dir,
 	if (info) {
 		err = bpf_obj_get_info_by_fd(fd, info, &info_len);
 		if (err) {
-			fprintf(stderr, "ERR: %s() can't get info - %s\n",
-				__func__,  strerror(errno));
-			return EXIT_FAIL_BPF;
+			fprintf(stderr, "ERR: %s() can't get info for %s - %s\n",
+				__func__, filename, strerror(errno));
+			return -EXIT_FAIL_BPF;
 		}
 	}
 

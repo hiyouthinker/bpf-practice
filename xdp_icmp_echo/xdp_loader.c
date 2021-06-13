@@ -1,5 +1,4 @@
 /*
- * (reference xdp_tutorial)
  * BigBro/2021
  */
 
@@ -8,17 +7,14 @@
 #include <string.h>
 #include <errno.h>
 #include <getopt.h>
-
 #include <locale.h>
 #include <unistd.h>
 #include <time.h>
-
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
-
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
-
+#include <arpa/inet.h>		/* for htonl */
 #include <linux/err.h>	/* for IS_ERR_OR_NULL */
 
 #include "../common/common_params.h"
@@ -117,7 +113,7 @@ static int map_in_map_inner_create(struct bpf_object *obj)
 
 	for (cpu = 0; cpu < cpu_num; cpu++) {
 		inner_map_fd[cpu] = bpf_create_map_name(BPF_MAP_TYPE_LRU_HASH, SESSION_NAT_INNER_MAP_NAME
-							, sizeof(struct flow_key), sizeof(struct fullnat_info_s), 1024, 0);
+							, sizeof(struct flow_key), sizeof(struct flow_value), SESS_NAT_TABLE_PERCPU_CAPACITY, 0);
 		if (inner_map_fd[cpu] < 0) {
 			fprintf(stderr, "ERROR: creating map %s failed\n", SESSION_NAT_INNER_MAP_NAME);
 			goto error;
@@ -152,6 +148,8 @@ static int map_in_map_inner_unpin(struct config *cfg)
 		len = snprintf(map_path, sizeof(map_path), "%s/%s_cpu%d", cfg->pin_dir, SESSION_NAT_INNER_MAP_NAME, cpu);
 		if (len < 0)
 			return -EINVAL;
+		if (access(map_path, F_OK ) < 0)
+			continue;
 		if (unlink(map_path) < 0) {
 			fprintf(stderr, "ERROR: unlink %s failed, error (%d): %s\n"
 				, map_path, errno, strerror(errno));
@@ -219,6 +217,30 @@ static int map_in_map_outer_update(struct bpf_object *obj)
 		if (err) {
 			fprintf(stderr, "Failed to update array of maps\n");
 			return -1;
+		} else {
+			printf("The fd of %s%d in %s is %d\n"
+				, SESSION_NAT_INNER_MAP_NAME, cpu, "session_nat_table_outer", inner_map_fd[cpu]);
+		}
+	}
+	return 0;
+}
+
+static int snat_ip_pool_init(struct bpf_object *obj)
+{
+	int map_fd, err, index;
+	__u32 snat_ip[4] = {htonl(0xAC320249), htonl(0xAC3202ad), htonl(0xAC3202ae), htonl(0xAC3202af)};
+
+	map_fd = bpf_object__find_map_fd_by_name(obj, "snat_ip_pool");
+	if (map_fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "snat_ip_pool");
+		return -1;
+	}
+
+	for (index = 0; index < SNAT_IP_POOL_CAPACITY; index++) {
+		err = bpf_map_update_elem(map_fd, &index, &snat_ip[index], 0);
+		if (err) {
+			fprintf(stderr, "Failed to update snat_ip_pool maps\n");
+			return -1;
 		}
 	}
 	return 0;
@@ -275,6 +297,9 @@ int main(int argc, char **argv)
 		printf(" - XDP prog attached on device:%s(ifindex:%d)\n",
 		       cfg.ifname, cfg.ifindex);
 	}
+
+	if (snat_ip_pool_init(bpf_obj) < 0)
+		return EXIT_FAIL_BPF;
 
 	if (!cfg.reuse_maps) {
 		int err1, err2;

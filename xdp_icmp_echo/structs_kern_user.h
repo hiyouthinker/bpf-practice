@@ -7,8 +7,10 @@
 
 #define SESSION_NAT_INNER_MAP_NAME			"session_nat_table_inner"
 
-#define __XDP_ACTION_MAX 		(XDP_REDIRECT + 1)
-#define MAX_SUPPORTED_CPUS 		128
+#define __XDP_ACTION_MAX 					(XDP_REDIRECT + 1)
+#define MAX_SUPPORTED_CPUS 					128
+#define SNAT_IP_POOL_CAPACITY 				4
+#define SESS_NAT_TABLE_PERCPU_CAPACITY		1024
 
 struct flow_key {
 	union {
@@ -20,19 +22,24 @@ struct flow_key {
 		__be32 dstv6[4];
 	};
 	union {
-		__u32 ports;
-		__u16 port16[2];
+		__be32 ports;
+		__be16 port16[2];
 	};
 	__u8 proto;
 };
 
-struct fullnat_info_s {
-	__u32 src;
-	__u32 dst;
+struct fullnat_info {
+	__be32 src;
+	__be32 dst;
 	union {
-		__u32 ports;
-		__u16 port16[2];
+		__be32 ports;
+		__be16 port16[2];
 	};
+};
+
+struct flow_value {
+	struct fullnat_info fnat;
+	__u64 last_time;
 };
 
 struct pkt_stats {
@@ -73,6 +80,16 @@ enum {
 	STATS_GLOBAL_VALIDITY_UDP_HEADER_MALFORM,
 	STATS_GLOBAL_VALIDITY_IPv6_HEADER_MALFORM,
 	__STATS_GLOBAL_VALIDITY_MAX
+};
+
+enum {
+	STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_SNAT_IP_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_SESSION_FIRST_SEEN,
+	STATS_GLOBAL_EVENT_SESSION_HIT,
+	STATS_GLOBAL_EVENT_NAT_HIT,
+	STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST,
+	__STATS_GLOBAL_EVENT_MAX
 };
 
 #endif

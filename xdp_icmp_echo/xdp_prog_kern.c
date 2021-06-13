@@ -1,5 +1,4 @@
 /*
- * (reference xdp_tutorial)
  * BigBro/2021
  */
 
@@ -124,7 +123,7 @@ out:
 static __always_inline
 __u32 xdp_stats_action(struct xdp_md *ctx, __u32 key)
 {
-	struct pkt_stats *rec;
+	__u32 *rec;
 
 	if (key >= __XDP_ACTION_MAX)
 		return -1;
@@ -133,9 +132,7 @@ __u32 xdp_stats_action(struct xdp_md *ctx, __u32 key)
 	if (!rec)
 		return -1;
 
-	lock_xadd(&rec->rx_packets, 1);
-	lock_xadd(&rec->rx_bytes, (ctx->data_end - ctx->data));
-
+	*rec += 1;
 	return 0;
 }
 
@@ -172,6 +169,22 @@ __u32 xdp_stats_validity(struct xdp_md *ctx, __u32 key)
 	lock_xadd(&rec->rx_packets, 1);
 	lock_xadd(&rec->rx_bytes, (ctx->data_end - ctx->data));
 
+	return 0;
+}
+
+static __always_inline
+__u32 xdp_stats_events(struct xdp_md *ctx, __u32 key)
+{
+	__u32 *value;
+
+	if (key >= __STATS_GLOBAL_PKT_MAX)
+		return -1;
+
+	value = bpf_map_lookup_elem(&stats_events, &key);
+	if (!value)
+		return -1;
+
+	lock_xadd(value, 1);
 	return 0;
 }
 
@@ -247,6 +260,199 @@ static __always_inline int ip_decrease_ttl(struct iphdr *iph)
 	check += bpf_htons(0x0100);
 	iph->check = (__u16)(check + (check >= 0xFFFF));
 	return --iph->ttl;
+}
+
+static __always_inline void connection_table_lookup(            void *inner_map
+				, struct flow_key *key, struct flow_value **value)
+{
+	if (!value)
+		return;
+	*value = bpf_map_lookup_elem(inner_map, key);
+	if (!*value)
+		return;
+	(*value)->last_time = bpf_ktime_get_ns();
+}
+
+SEC("xdp_udp_fullnat_forward")
+int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
+{
+	void *data_end = (void *)(long)ctx->data_end;
+	void *data = (void *)(long)ctx->data;
+	struct hdr_cursor nh;
+	struct collect_vlans vlans;
+	struct vlan_hdr *vlh;
+	struct ethhdr *eth;
+	struct iphdr *iphdr;
+	struct udphdr *uhdr;
+	int eth_type;
+	__u32 action = XDP_PASS;
+	__u32 pkt_type_key, pkt_validity_key;
+	char smac[ETH_ALEN] = {0x9c, 0x69, 0xb4, 0x60, 0x35, 0x61};
+	char dmac[ETH_ALEN] = {0x68, 0x91, 0xd0, 0x61, 0x94, 0xca};
+	__be32 snat_key, *snat_value;
+	int l4proto;
+	__u32 cpu_num;
+	void *session_nat_table_inner;
+	struct flow_key sess_key;
+	struct flow_value *sess_value = NULL, sess_value_from_client, sess_value_from_server;
+
+	xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_ALL);
+
+	__builtin_memset(&vlans, 0, sizeof(vlans));
+
+	/* These keep track of the next header type and iterator pointer */
+	nh.pos = data;
+
+	eth_type = parse_ethhdr_vlan(&nh, data_end, &eth, &vlans);
+	if (vlans.id[0] != 0) {
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN);
+	}
+
+	pkt_type_key = get_pkt_type(&nh, data_end, eth_type);
+
+	switch (vlans.id[0]) {
+	case 0:
+		pkt_validity_key = STATS_GLOBAL_VALIDITY_NONE_TAG;
+		goto error;
+	case TAG_FROM_CLIENT:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN_FROM_CLIENT);
+		break;
+	case TAG_FROM_SERVER:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN_FROM_SERVER);
+		break;
+	default:
+		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_OTHER_VLAN);
+		pkt_validity_key = STATS_GLOBAL_VALIDITY_UNKNOWN_TAG;
+		goto error;
+	}
+
+	if (!eth || ((eth + 1) > data_end)) {
+		pkt_validity_key = STATS_GLOBAL_VALIDITY_ETHERNET_HEADER_MALFORM;
+		goto error;
+	}
+
+	if (eth_type != bpf_htons(ETH_P_IP)) {
+		goto done;
+	}
+
+	l4proto = parse_iphdr(&nh, data_end, &iphdr);
+	if (l4proto == -1) {
+		pkt_validity_key = STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM;
+		goto error;
+	} else if (l4proto == IPPROTO_UDP) {
+		if (parse_udphdr(&nh, data_end, &uhdr) < 0) {
+			pkt_validity_key = STATS_GLOBAL_VALIDITY_UDP_HEADER_MALFORM;
+			goto error;
+		}
+#ifdef SUPPORT_UDP_CHECKSUM
+		uhdr->check = 0;
+#else
+		uhdr->check = 0;
+#endif
+	} else {
+		/* support UDP only */
+		goto done;
+	}
+
+	cpu_num = bpf_get_smp_processor_id();
+	session_nat_table_inner = bpf_map_lookup_elem(&session_nat_table_outer, &cpu_num);
+	if (!session_nat_table_inner) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST);
+		goto done;
+	}
+
+	__builtin_memset(&sess_key, 0, sizeof(sess_key));
+	sess_key.src = iphdr->saddr;
+	sess_key.dst = iphdr->daddr;
+	sess_key.proto = iphdr->protocol;
+	sess_key.port16[0] = uhdr->source;
+	sess_key.port16[1] = uhdr->dest;
+
+	connection_table_lookup(session_nat_table_inner, &sess_key, &sess_value);
+	if (sess_value) {
+		snat_value = &sess_value->fnat.src;
+		if (vlans.id[0] == TAG_FROM_CLIENT) {
+			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESSION_HIT);
+		} else {
+			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_HIT);
+		}
+		goto modify_ip;
+	} else {
+		if (vlans.id[0] == TAG_FROM_SERVER) {
+			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST);
+			goto done;
+		} else {
+			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESSION_FIRST_SEEN);
+			sess_value = &sess_value_from_client;
+		}
+	}
+
+	snat_key = cpu_num % SNAT_IP_POOL_CAPACITY;
+	snat_value = bpf_map_lookup_elem(&snat_ip_pool, &snat_key);
+	if (!snat_value) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SNAT_IP_DOES_NOT_EXIST);
+		goto done;
+	}
+	/*
+	 * A:a -> B:b	->	C:c -> D:d
+	 * 		client -> server: C:c -> D:d
+	 */
+	__builtin_memset(&sess_value_from_client, 0, sizeof(sess_value_from_client));
+	sess_value_from_client.fnat.src = *snat_value;
+	sess_value_from_client.fnat.dst = iphdr->daddr;
+	sess_value_from_client.fnat.port16[0] = uhdr->source;
+	sess_value_from_client.fnat.port16[1] = uhdr->dest;
+	bpf_map_update_elem(session_nat_table_inner, &sess_key, &sess_value_from_client, 0);
+
+	/*
+	 * D:d -> C:c	->	B:b	->	A:a
+	 * 		server -> client: D:d -> C:c
+	 */
+	sess_key.src = sess_value_from_client.fnat.dst;
+	sess_key.dst = sess_value_from_client.fnat.src;
+	sess_key.port16[0] = sess_value_from_client.fnat.port16[1];
+	sess_key.port16[1] = sess_value_from_client.fnat.port16[0];
+
+	/*
+	 * D:d -> C:c	->	B:b	->	A:a
+	 * 		server -> client: B:b	->	A:a
+	 */
+	__builtin_memset(&sess_value_from_server, 0, sizeof(sess_value_from_server));
+	sess_value_from_server.fnat.src = iphdr->daddr;
+	sess_value_from_server.fnat.dst = iphdr->saddr;
+	sess_value_from_server.fnat.port16[0] = uhdr->dest;
+	sess_value_from_server.fnat.port16[1] = uhdr->source;
+	sess_value_from_server.last_time = bpf_ktime_get_ns();
+	if (bpf_map_update_elem(session_nat_table_inner, &sess_key, &sess_value_from_server, 0) < 0) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST);
+		goto done;
+	}
+modify_ip:
+	iphdr->saddr = sess_value->fnat.src;
+	iphdr->daddr = sess_value->fnat.dst;
+    /* Update IP checksum */
+	iphdr->check = 0;
+#ifdef KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
+	iphdr->check = carry(sum16(iphdr, sizeof(*iphdr), data_end));
+#else
+	iphdr->check = carry(sum16(iphdr, iphdr->ihl * 4, data_end));
+#endif
+	ip_decrease_ttl(iphdr);
+
+	/* Build Ethernet Header */
+	vlh = (struct vlan_hdr *)(eth + 1);
+	vlh->h_vlan_TCI = bpf_htons(TAG_TO_NEXTHOP | (vlh->h_vlan_TCI & ~VLAN_VID_MASK));
+	__builtin_memcpy(eth->h_source, smac, ETH_ALEN);
+	__builtin_memcpy(eth->h_dest, dmac, ETH_ALEN);
+
+	action = XDP_TX;
+done:
+	xdp_stats_pkt(ctx, pkt_type_key);
+	xdp_stats_action(ctx, action);
+	return action;
+error:
+	xdp_stats_validity(ctx, pkt_validity_key);
+	goto done;
 }
 
 SEC("xdp_ip_forward")
