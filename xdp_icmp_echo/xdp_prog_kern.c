@@ -22,6 +22,11 @@
 #define KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
 
 #define SUPPORT_UDP_CHECKSUM
+/*
+ * So sorry
+ * I don’t know what is the RSS algorithm of the NIC
+ */
+#define USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
 
 #define TAG_FROM_CLIENT		705
 #define TAG_FROM_SERVER		708
@@ -295,6 +300,9 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	void *session_nat_table_inner;
 	struct flow_key sess_key;
 	struct flow_value *sess_value = NULL, sess_value_from_client, sess_value_from_server;
+	struct vip_vport_policy_key_s policy_key;
+	struct vip_vport_policy_value_s *policy_value;
+	__u32 bip_index;
 
 	xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_ALL);
 
@@ -341,20 +349,19 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 		goto error;
 	} else if (l4proto == IPPROTO_UDP) {
 		if (parse_udphdr(&nh, data_end, &uhdr) < 0) {
+			action = XDP_DROP;
 			pkt_validity_key = STATS_GLOBAL_VALIDITY_UDP_HEADER_MALFORM;
 			goto error;
 		}
-#ifdef SUPPORT_UDP_CHECKSUM
-		uhdr->check = 0;
-#else
-		uhdr->check = 0;
-#endif
 	} else {
 		/* support UDP only */
 		goto done;
 	}
-
+#ifdef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
+	cpu_num = 0;
+#else
 	cpu_num = bpf_get_smp_processor_id();
+#endif
 	session_nat_table_inner = bpf_map_lookup_elem(&session_nat_table_outer, &cpu_num);
 	if (!session_nat_table_inner) {
 		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST);
@@ -379,10 +386,21 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 		goto modify_ip;
 	} else {
 		if (vlans.id[0] == TAG_FROM_SERVER) {
+			action = XDP_DROP;
 			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST);
 			goto done;
 		} else {
+			__builtin_memset(&policy_key, 0, sizeof(policy_key));
+			policy_key.vip = sess_key.dst;
+			policy_key.vport = sess_key.port16[1];
+
+			policy_value = bpf_map_lookup_elem(&vpi_vport_policy, &policy_key);
 			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESSION_FIRST_SEEN);
+			if (!policy_value) {
+				action = XDP_DROP;
+				xdp_stats_events(ctx, STATS_GLOBAL_EVENT_POLICY_DOES_NOT_EXIST);
+				goto done;
+			}
 			sess_value = &sess_value_from_client;
 		}
 	}
@@ -397,11 +415,24 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	 * A:a -> B:b	->	C:c -> D:d
 	 * 		client -> server: C:c -> D:d
 	 */
+	if (!policy_value->bip_num ||
+		(policy_value->bip_num > BIP_CAPACITY)) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST);
+		goto done;
+	}
+	else
+		bip_index = bpf_ktime_get_ns() % policy_value->bip_num;
+
+#ifdef KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
+	if (bip_index >= BIP_CAPACITY)
+		bip_index = 0;
+#endif
+
 	__builtin_memset(&sess_value_from_client, 0, sizeof(sess_value_from_client));
 	sess_value_from_client.fnat.src = *snat_value;
-	sess_value_from_client.fnat.dst = iphdr->daddr;
+	sess_value_from_client.fnat.dst = policy_value->bip[bip_index];
 	sess_value_from_client.fnat.port16[0] = uhdr->source;
-	sess_value_from_client.fnat.port16[1] = uhdr->dest;
+	sess_value_from_client.fnat.port16[1] = policy_value->bport;
 	bpf_map_update_elem(session_nat_table_inner, &sess_key, &sess_value_from_client, 0);
 
 	/*
@@ -430,6 +461,16 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 modify_ip:
 	iphdr->saddr = sess_value->fnat.src;
 	iphdr->daddr = sess_value->fnat.dst;
+
+	/* modify port */
+	uhdr->source = sess_value->fnat.port16[0];
+	uhdr->dest = sess_value->fnat.port16[1];
+#ifdef SUPPORT_UDP_CHECKSUM
+	uhdr->check = 0;
+#else
+	uhdr->check = 0;
+#endif
+
     /* Update IP checksum */
 	iphdr->check = 0;
 #ifdef KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN

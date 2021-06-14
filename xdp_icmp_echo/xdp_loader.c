@@ -246,6 +246,49 @@ static int snat_ip_pool_init(struct bpf_object *obj)
 	return 0;
 }
 
+static int vip_vport_policy_init(struct bpf_object *obj)
+{
+	int map_fd, err;
+	struct vip_vport_policy_key_s key;
+	struct vip_vport_policy_value_s value;
+
+	map_fd = bpf_object__find_map_fd_by_name(obj, "vpi_vport_policy");
+	if (map_fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "vpi_vport_policy");
+		return -1;
+	}
+
+	memset(&key, 0, sizeof(key));
+	key.vip = htonl(0xAC320a4a);
+	key.vport = htons(8000);
+	memset(&value, 0, sizeof(value));
+	value.bip[0] = htonl(0xAC320a5b);
+	value.bip[1] = htonl(0xAC320a5c);
+	value.bip_num = 2;
+	value.bport = htons(3456);
+
+	err = bpf_map_update_elem(map_fd, &key, &value, 0);
+	if (err) {
+		fprintf(stderr, "Failed to update vpi_vport_policy maps\n");
+		return -1;
+	}
+
+	memset(&key, 0, sizeof(key));
+	key.vip = htonl(0xAC320a4b);
+	key.vport = htons(8080);
+	memset(&value, 0, sizeof(value));
+	value.bip[0] = htonl(0xAC320a5d);
+	value.bip[1] = htonl(0xAC320a5e);
+	value.bip_num = 2;
+	value.bport = htons(3456);
+	err = bpf_map_update_elem(map_fd, &key, &value, 0);
+	if (err) {
+		fprintf(stderr, "Failed to update vpi_vport_policy maps\n");
+		return -1;
+	}
+	return 0;
+}
+
 static int my_print(enum libbpf_print_level level, const char *format,
 		     va_list args)
 {
@@ -298,7 +341,8 @@ int main(int argc, char **argv)
 		       cfg.ifname, cfg.ifindex);
 	}
 
-	if (snat_ip_pool_init(bpf_obj) < 0)
+	if ((snat_ip_pool_init(bpf_obj) < 0)
+		|| (vip_vport_policy_init(bpf_obj) < 0))
 		return EXIT_FAIL_BPF;
 
 	if (!cfg.reuse_maps) {

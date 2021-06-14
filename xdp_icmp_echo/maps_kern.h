@@ -48,4 +48,11 @@ struct bpf_map_def SEC("maps") snat_ip_pool = {
 	.value_size = sizeof(__u32),
 	.max_entries = SNAT_IP_POOL_CAPACITY,
 };
+
+struct bpf_map_def SEC("maps") vpi_vport_policy = {
+	.type = BPF_MAP_TYPE_HASH,
+	.key_size = sizeof(struct vip_vport_policy_key_s),
+	.value_size = sizeof(struct vip_vport_policy_value_s),
+	.max_entries = VIP_VPORT_POLICY_CAPACITY,
+};
 #endif

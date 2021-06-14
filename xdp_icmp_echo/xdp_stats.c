@@ -145,12 +145,14 @@ static const char *reason_names_action[__XDP_ACTION_MAX] = {
 };
 
 static const char *reason_names_event[__STATS_GLOBAL_EVENT_MAX] = {
-	[STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST]		= "MAP - Non",
-	[STATS_GLOBAL_EVENT_SNAT_IP_DOES_NOT_EXIST]			= "SNAT IP - Non ",
+	[STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST]		= "MAP - Not Exist",
+	[STATS_GLOBAL_EVENT_SNAT_IP_DOES_NOT_EXIST]			= "SNAT IP - Not Exist",
 	[STATS_GLOBAL_EVENT_SESSION_FIRST_SEEN]				= "Session First seen",
 	[STATS_GLOBAL_EVENT_SESSION_HIT]					= "Session Hit",
 	[STATS_GLOBAL_EVENT_NAT_HIT]						= "NAT Hit",
-	[STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST]				= "NAT - Non",
+	[STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST]				= "NAT - Not Exist",
+	[STATS_GLOBAL_EVENT_POLICY_DOES_NOT_EXIST]			= "Policy - Not Exist",
+	[STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST]				= "BIP - Not Exist",
 };
 
 static void stats_print(struct common_stats_s value[], int max_entries, const char *titles[], int verbose)

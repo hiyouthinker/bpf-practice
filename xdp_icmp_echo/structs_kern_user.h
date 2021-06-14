@@ -11,6 +11,8 @@
 #define MAX_SUPPORTED_CPUS 					128
 #define SNAT_IP_POOL_CAPACITY 				4
 #define SESS_NAT_TABLE_PERCPU_CAPACITY		1024
+#define VIP_VPORT_POLICY_CAPACITY 			128
+#define BIP_CAPACITY 						8
 
 struct flow_key {
 	union {
@@ -40,6 +42,17 @@ struct fullnat_info {
 struct flow_value {
 	struct fullnat_info fnat;
 	__u64 last_time;
+};
+
+struct vip_vport_policy_key_s {
+	__be32 vip;
+	__be16 vport;
+};
+
+struct vip_vport_policy_value_s {
+	__be32 bip[BIP_CAPACITY];
+	__u32 bip_num;
+	__be16 bport;
 };
 
 struct pkt_stats {
@@ -89,6 +102,8 @@ enum {
 	STATS_GLOBAL_EVENT_SESSION_HIT,
 	STATS_GLOBAL_EVENT_NAT_HIT,
 	STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_POLICY_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST,
 	__STATS_GLOBAL_EVENT_MAX
 };
 
