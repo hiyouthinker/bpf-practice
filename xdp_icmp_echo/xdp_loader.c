@@ -23,6 +23,10 @@
 #include "structs_kern_user.h"
 
 #define ARRAY_ELEM_NUM(array) (sizeof(array) / sizeof((array)[0]))
+#define IPv4(a,b,c,d) ((__u32)(((a) & 0xff) << 24) | \
+					   (((b) & 0xff) << 16) | \
+					   (((c) & 0xff) << 8)  | \
+					   ((d) & 0xff))
 
 static int inner_map_fd[MAX_SUPPORTED_CPUS];
 
@@ -117,7 +121,7 @@ static int map_in_map_inner_create(struct bpf_object *obj)
 		inner_map_fd[cpu] = bpf_create_map_name(BPF_MAP_TYPE_LRU_HASH, SESSION_NAT_INNER_MAP_NAME
 							, sizeof(struct flow_key), sizeof(struct flow_value), SESS_NAT_TABLE_PERCPU_CAPACITY, 0);
 		if (inner_map_fd[cpu] < 0) {
-			fprintf(stderr, "ERROR: creating map %s failed\n", SESSION_NAT_INNER_MAP_NAME);
+			fprintf(stderr, "ERROR: creating map %s%d failed (%s)\n", SESSION_NAT_INNER_MAP_NAME, cpu, strerror(errno));
 			goto error;
 		}
 	}
@@ -230,7 +234,19 @@ static int map_in_map_outer_update(struct bpf_object *obj)
 static int snat_ip_pool_init(struct bpf_object *obj)
 {
 	int map_fd, err, index;
-	__u32 snat_ip[4] = {htonl(0xAC320249), htonl(0xAC3202ad), htonl(0xAC3202ae), htonl(0xAC3202af)};
+	__u32 snat_ip[] = {
+#if 0
+		htonl(IPv4(172,50,2,73)),
+		htonl(IPv4(172,50,2,173)),
+		htonl(IPv4(172,50,2,174)),
+		htonl(IPv4(172,50,2,175)),
+#else
+		htonl(IPv4(172,51,2,72)),
+		htonl(IPv4(172,51,2,172)),
+		htonl(IPv4(172,51,2,173)),
+		htonl(IPv4(172,51,2,174)),
+#endif
+	};
 
 	map_fd = bpf_object__find_map_fd_by_name(obj, "snat_ip_pool");
 	if (map_fd < 0) {
@@ -250,9 +266,36 @@ static int snat_ip_pool_init(struct bpf_object *obj)
 
 static int vip_vport_policy_init(struct bpf_object *obj)
 {
-	int map_fd, err;
-	struct vip_vport_policy_key_s key;
-	struct vip_vport_policy_value_s value;
+	int map_fd, err, i;
+	struct vip_vport_policy_key_s front[] = {
+		{htonl(IPv4(172,50,10,74)), htons(8000)},
+		{htonl(IPv4(172,50,10,75)), htons(8080)},
+		{htonl(IPv4(172,51,10,74)), htons(8000)},
+		{htonl(IPv4(172,51,10,75)), htons(8080)},
+		{htonl(IPv4(172,51,10,76)), htons(9000)},
+	};
+	struct vip_vport_policy_value_s backend[] = {
+		{
+			{htonl(IPv4(172,50,10,91)), htonl(IPv4(172,50,10,92))}, 2, htons(3456)
+		},
+		{
+			{htonl(IPv4(172,50,10,93)), htonl(IPv4(172,50,10,94))}, 2, htons(3456)
+		},
+		{
+			{htonl(IPv4(172,51,10,91)), htonl(IPv4(172,51,10,92))}, 2, htons(3456)
+		},
+		{
+			{htonl(IPv4(172,51,10,93)), htonl(IPv4(172,51,10,94))}, 2, htons(3456)
+		},
+		{
+			{htonl(IPv4(172,51,2,74)), htonl(IPv4(172,51,2,74))}, 2, htons(3456)
+		},
+	};
+
+	if (ARRAY_ELEM_NUM(front) != ARRAY_ELEM_NUM(backend)) {
+		fprintf(stderr, "ERROR: key and value do not match\n");
+		return -1;
+	}
 
 	map_fd = bpf_object__find_map_fd_by_name(obj, "vip_vport_policy");
 	if (map_fd < 0) {
@@ -260,33 +303,12 @@ static int vip_vport_policy_init(struct bpf_object *obj)
 		return -1;
 	}
 
-	memset(&key, 0, sizeof(key));
-	key.vip = htonl(0xAC320a4a);
-	key.vport = htons(8000);
-	memset(&value, 0, sizeof(value));
-	value.bip[0] = htonl(0xAC320a5b);
-	value.bip[1] = htonl(0xAC320a5c);
-	value.bip_num = 2;
-	value.bport = htons(3456);
-
-	err = bpf_map_update_elem(map_fd, &key, &value, 0);
-	if (err) {
-		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
-		return -1;
-	}
-
-	memset(&key, 0, sizeof(key));
-	key.vip = htonl(0xAC320a4b);
-	key.vport = htons(8080);
-	memset(&value, 0, sizeof(value));
-	value.bip[0] = htonl(0xAC320a5d);
-	value.bip[1] = htonl(0xAC320a5e);
-	value.bip_num = 2;
-	value.bport = htons(3456);
-	err = bpf_map_update_elem(map_fd, &key, &value, 0);
-	if (err) {
-		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
-		return -1;
+	for (i = 0; i < ARRAY_ELEM_NUM(front); i++) {
+		err = bpf_map_update_elem(map_fd, &front[i], &backend[i], 0);
+		if (err) {
+			fprintf(stderr, "Failed to update vip_vport_policy maps\n");
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -335,9 +357,39 @@ static int rss_hash_key_init(struct bpf_object *obj)
 	}
 	convert_rss_key((uint32_t *)&rss_key, (__u32 *)rss_key_be.hash_key, ARRAY_ELEM_NUM(rss_key.hash_key));
 
-	if (bpf_map_update_elem(map_fd, &key, rss_key_be.hash_key, 0) < 0) {
+	if (bpf_map_update_elem(map_fd, &key, &rss_key_be, 0) < 0) {
 		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
 		return -1;
+	}
+	return 0;
+}
+
+static int smac_dmac_init(struct bpf_object *obj)
+{
+	int map_fd, key  = 0;
+#if 0
+	struct smac_dmac_s mac[] = {
+		{0x9c, 0x69, 0xb4, 0x60, 0x35, 0x61},
+		{0x68, 0x91, 0xd0, 0x61, 0x94, 0xca}
+	};
+#else
+	struct smac_dmac_s mac[] = {
+		{{0xa0, 0x36, 0x9f, 0xba, 0x20, 0x10}},
+		{{0xa0, 0x36, 0x9f, 0xba, 0x1f, 0xcc}}
+	};
+#endif
+
+	map_fd = bpf_object__find_map_fd_by_name(obj, "smac_dmac");
+	if (map_fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "smac_dmac");
+		return -1;
+	}
+
+	for (key = 0; key < ARRAY_ELEM_NUM(mac); key++) {
+		if (bpf_map_update_elem(map_fd, &key, &mac[key], 0) < 0) {
+			fprintf(stderr, "Failed to update vip_vport_policy maps\n");
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -396,7 +448,8 @@ int main(int argc, char **argv)
 
 	if ((snat_ip_pool_init(bpf_obj) < 0)
 		|| (vip_vport_policy_init(bpf_obj) < 0)
-		|| (rss_hash_key_init(bpf_obj) < 0))
+		|| (rss_hash_key_init(bpf_obj) < 0)
+		|| (smac_dmac_init(bpf_obj) < 0))
 		return EXIT_FAIL_BPF;
 
 	if (!cfg.reuse_maps) {

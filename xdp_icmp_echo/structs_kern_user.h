@@ -5,6 +5,8 @@
 #ifndef __COMMON_KERN_USER_H
 #define __COMMON_KERN_USER_H
 
+#include <linux/if_ether.h>	/* for ETH_ALEN */
+
 #define SESSION_NAT_INNER_MAP_NAME			"session_nat_table_inner"
 
 #define __XDP_ACTION_MAX 					(XDP_REDIRECT + 1)
@@ -69,6 +71,10 @@ struct rss_hash_key_s {
 	__u8 hash_key[RSS_HASH_KEY_LEN];
 };
 
+struct smac_dmac_s {
+	__u8 mac[ETH_ALEN];
+};
+
 struct pkt_stats {
 	__u64 rx_packets;
 	__u64 rx_bytes;
@@ -118,6 +124,8 @@ enum {
 	STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST,
 	STATS_GLOBAL_EVENT_POLICY_DOES_NOT_EXIST,
 	STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_SMAC_DOES_NOT_EXIST,
+	STATS_GLOBAL_EVENT_DMAC_DOES_NOT_EXIST,
 	__STATS_GLOBAL_EVENT_MAX
 };
 

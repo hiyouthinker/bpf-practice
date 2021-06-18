@@ -29,7 +29,7 @@
 #define NIPQUAD_FMT "%u.%u.%u.%u"
 
 struct common_stats_s {
-	char value[256];
+	char value[512];
 };
 
 typedef struct info_collection_s {
@@ -153,6 +153,8 @@ static const char *reason_names_event[__STATS_GLOBAL_EVENT_MAX] = {
 	[STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST]				= "NAT - Not Exist",
 	[STATS_GLOBAL_EVENT_POLICY_DOES_NOT_EXIST]			= "Policy - Not Exist",
 	[STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST]				= "BIP - Not Exist",
+	[STATS_GLOBAL_EVENT_SMAC_DOES_NOT_EXIST]			= "SMAC - Not Exist",
+	[STATS_GLOBAL_EVENT_DMAC_DOES_NOT_EXIST]			= "DMAC - Not Exist",
 };
 
 static void stats_print(struct common_stats_s value[], int max_entries, const char *titles[], int verbose)

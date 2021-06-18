@@ -62,4 +62,11 @@ struct bpf_map_def SEC("maps") rss_hash_key = {
 	.value_size = sizeof(struct rss_hash_key_s),
 	.max_entries = 1,
 };
+
+struct bpf_map_def SEC("maps") smac_dmac = {
+	.type = BPF_MAP_TYPE_ARRAY,
+	.key_size = sizeof(__u32),
+	.value_size = sizeof(struct smac_dmac_s),
+	.max_entries = 2,
+};
 #endif
