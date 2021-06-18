@@ -19,7 +19,6 @@
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "../common/common_libbpf.h"
 #include "structs_kern_user.h"
 
 #define ARRAY_ELEM_NUM(array) (sizeof(array) / sizeof((array)[0]))

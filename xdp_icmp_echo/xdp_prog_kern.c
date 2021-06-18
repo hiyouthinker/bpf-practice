@@ -355,6 +355,8 @@ static __u32 get_cpu_num_by_rss(struct fullnat_info *fnat)
 }
 #endif
 
+SEC(".text.version") char version[] = "Version: BigBro/0.1 - 2021";
+
 #ifdef __TEST__
 SEC("xdp_test")
 int xdp_test_func(struct xdp_md *ctx)
