@@ -13,6 +13,16 @@
 #define SESS_NAT_TABLE_PERCPU_CAPACITY		1024
 #define VIP_VPORT_POLICY_CAPACITY 			128
 #define BIP_CAPACITY 						8
+#define I40E_RSS_HASH_KEY_LEN				52
+#define I40E_INDIR_TABLE_LEN				512
+#define I40E_RX_RINGS_NUM					24
+#define IXGBE_RSS_HASH_KEY_LEN				40
+#define IXGBE_INDIR_TABLE_LEN				128
+#define IXGBE_RX_RINGS_NUM					16
+
+#define RSS_HASH_KEY_LEN					IXGBE_RSS_HASH_KEY_LEN
+#define INDIR_TABLE_LEN						IXGBE_INDIR_TABLE_LEN
+#define RX_RINGS_NUM						IXGBE_RX_RINGS_NUM
 
 struct flow_key {
 	union {
@@ -53,6 +63,10 @@ struct vip_vport_policy_value_s {
 	__be32 bip[BIP_CAPACITY];
 	__u32 bip_num;
 	__be16 bport;
+};
+
+struct rss_hash_key_s {
+	__u8 hash_key[RSS_HASH_KEY_LEN];
 };
 
 struct pkt_stats {

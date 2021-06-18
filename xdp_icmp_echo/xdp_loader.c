@@ -22,6 +22,8 @@
 #include "../common/common_libbpf.h"
 #include "structs_kern_user.h"
 
+#define ARRAY_ELEM_NUM(array) (sizeof(array) / sizeof((array)[0]))
+
 static int inner_map_fd[MAX_SUPPORTED_CPUS];
 
 static const struct option_wrapper long_options[] = {
@@ -252,9 +254,9 @@ static int vip_vport_policy_init(struct bpf_object *obj)
 	struct vip_vport_policy_key_s key;
 	struct vip_vport_policy_value_s value;
 
-	map_fd = bpf_object__find_map_fd_by_name(obj, "vpi_vport_policy");
+	map_fd = bpf_object__find_map_fd_by_name(obj, "vip_vport_policy");
 	if (map_fd < 0) {
-		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "vpi_vport_policy");
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "vip_vport_policy");
 		return -1;
 	}
 
@@ -269,7 +271,7 @@ static int vip_vport_policy_init(struct bpf_object *obj)
 
 	err = bpf_map_update_elem(map_fd, &key, &value, 0);
 	if (err) {
-		fprintf(stderr, "Failed to update vpi_vport_policy maps\n");
+		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
 		return -1;
 	}
 
@@ -283,7 +285,58 @@ static int vip_vport_policy_init(struct bpf_object *obj)
 	value.bport = htons(3456);
 	err = bpf_map_update_elem(map_fd, &key, &value, 0);
 	if (err) {
-		fprintf(stderr, "Failed to update vpi_vport_policy maps\n");
+		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
+		return -1;
+	}
+	return 0;
+}
+
+static inline void
+convert_rss_key(const __u32 *origin, __u32 *target, int len)
+{
+	int i;
+
+	for (i = 0; i < (len >> 2); i++)
+		target[i] = htonl(origin[i]);
+}
+
+static int rss_hash_key_init(struct bpf_object *obj)
+{
+	int map_fd, key  = 0;
+#if 0
+	struct rss_hash_key_s rss_key = {
+		{
+			0xcc, 0x0d, 0xed, 0x90, 0xc4, 0xf8, 0x81, 0xb5,
+			0xab, 0x54, 0xf5, 0x1f, 0x7a, 0x99, 0xf0, 0x0c,
+			0x9e, 0xf7, 0x5d, 0x76, 0x41, 0xfa, 0x1c, 0x21,
+			0x9f, 0xf7, 0x83, 0x45, 0x51, 0x97, 0x96, 0x7d,
+			0xdc, 0xca, 0x81, 0x0d, 0x8d, 0x4f, 0x76, 0x81,
+			0xc1, 0xaf, 0x18, 0x35, 0x9d, 0xbf, 0x06, 0x21,
+			0x62, 0xf7, 0xf5, 0x2d
+		}
+	};
+#else
+	struct rss_hash_key_s rss_key = {
+		{
+			0xfa, 0xe6, 0x51, 0x09, 0x1a, 0x1e, 0x32, 0xea,
+			0x55, 0x63, 0x46, 0x4f, 0xc9, 0x2a, 0x1b, 0x9a,
+			0xed, 0x63, 0x97, 0x90, 0x91, 0x23, 0x97, 0x03,
+			0xec, 0x09, 0x37, 0x04, 0xe8, 0x3c, 0x19, 0xe2,
+			0x68, 0xdf, 0x85, 0x88, 0xb0, 0xd6, 0x1d, 0x1a
+		}
+	};
+#endif
+	struct rss_hash_key_s rss_key_be;
+
+	map_fd = bpf_object__find_map_fd_by_name(obj, "rss_hash_key");
+	if (map_fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "rss_hash_key");
+		return -1;
+	}
+	convert_rss_key((uint32_t *)&rss_key, (__u32 *)rss_key_be.hash_key, ARRAY_ELEM_NUM(rss_key.hash_key));
+
+	if (bpf_map_update_elem(map_fd, &key, rss_key_be.hash_key, 0) < 0) {
+		fprintf(stderr, "Failed to update vip_vport_policy maps\n");
 		return -1;
 	}
 	return 0;
@@ -342,7 +395,8 @@ int main(int argc, char **argv)
 	}
 
 	if ((snat_ip_pool_init(bpf_obj) < 0)
-		|| (vip_vport_policy_init(bpf_obj) < 0))
+		|| (vip_vport_policy_init(bpf_obj) < 0)
+		|| (rss_hash_key_init(bpf_obj) < 0))
 		return EXIT_FAIL_BPF;
 
 	if (!cfg.reuse_maps) {

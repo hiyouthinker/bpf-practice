@@ -11,6 +11,11 @@
 #include "../common/rewrite_helpers.h"
 #include "maps_kern.h"
 
+//#define __TEST__
+//#define __XDP_PASS__
+//#define __XDP_ICMP_ECHO__
+//#define __XDP_IP_FORWARD__
+
 /*
  * verifier complains:
  *		math between pkt pointer and register with unbounded min value is not allowed
@@ -22,11 +27,10 @@
 #define KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
 
 #define SUPPORT_UDP_CHECKSUM
-/*
- * So sorry
- * I don’t know what is the RSS algorithm of the NIC
- */
 #define USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
+//#define USE_BUILTIN_CTZ
+
+#define THASH_IPV4_L4_LEN	 ((sizeof(struct rss_ipv4_tuple)) / 4)
 
 #define TAG_FROM_CLIENT		705
 #define TAG_FROM_SERVER		708
@@ -39,6 +43,37 @@
 #define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
 #endif
 
+#ifndef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
+#ifdef USE_BUILTIN_CTZ
+#define bsf32(v)	__builtin_ctz(v)
+#else
+static __always_inline __u32 bsf32(__u32 v)
+{
+	__u32 c = 0;
+
+#pragma unroll
+	for (; (v & 0x01); v >>= 1) {
+		c++;
+	}
+	return c;
+}
+#endif
+#endif
+
+/* saddr/daddr and ports have to be CPU byte order */
+struct rss_ipv4_tuple {
+	__u32 saddr;
+	__u32 daddr;
+	union {
+		struct {
+			__u16 dport;
+			__u16 sport;
+		};
+		__u32 ports;
+	};
+};
+
+#ifndef __TEST__
 static __always_inline
 int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 {
@@ -277,7 +312,73 @@ static __always_inline void connection_table_lookup(            void *inner_map
 		return;
 	(*value)->last_time = bpf_ktime_get_ns();
 }
+#endif
 
+#ifndef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
+/* from rte_thash.h */
+static __always_inline __u32
+softrss_be(__u32 *input_tuple, __u32 input_len, const __u8 *rss_key)
+{
+	__u32 i, j, map, ret = 0;
+
+#pragma unroll
+	for (j = 0; j < input_len; j++) {
+#pragma unroll
+		for (map = input_tuple[j]; map; map &= (map - 1)) {
+			i = bsf32(map);
+			ret ^= ((const __u32 *)rss_key)[j] << (31 - i) |
+				(__u32)((__u64)(((const __u32 *)rss_key)[j + 1]) >> (i + 1));
+		}
+	}
+	return ret;
+}
+
+static __u32 get_cpu_num_by_rss(struct fullnat_info *fnat)
+{
+	struct rss_ipv4_tuple tuple;
+	__u32 map_key = 0, hash;
+	struct rss_hash_key_s *rss_key_be;
+
+	rss_key_be = bpf_map_lookup_elem(&rss_hash_key, &map_key);
+	if (!rss_key_be) {
+		return 0;
+	}
+
+	__builtin_memset(&tuple, 0, sizeof(tuple));
+	tuple.saddr = fnat->dst;
+	tuple.daddr = fnat->src;
+	tuple.sport = fnat->port16[1];
+	tuple.dport = fnat->port16[0];
+	hash = softrss_be((__u32 *)&tuple,
+				THASH_IPV4_L4_LEN, rss_key_be->hash_key);
+	return (hash % INDIR_TABLE_LEN) % RX_RINGS_NUM;
+}
+#endif
+
+#ifdef __TEST__
+SEC("xdp_test")
+int xdp_test_func(struct xdp_md *ctx)
+{
+	int cpu;
+	struct flow_value sess_value_from_client;
+
+	__builtin_memset(&sess_value_from_client, 0, sizeof(sess_value_from_client));
+#if 1
+	sess_value_from_client.fnat.src = 0x12345678;
+#else
+	sess_value_from_client.fnat.src = (__u32)ctx->data_end;
+#endif
+	sess_value_from_client.fnat.dst = 0x78563412;
+	sess_value_from_client.fnat.port16[0] = 0x1234;
+	sess_value_from_client.fnat.port16[1] = 0x3412;
+	cpu = get_cpu_num_by_rss(&sess_value_from_client.fnat);
+
+	if (cpu & 0x01)
+		return XDP_TX;
+	else
+		return XDP_PASS;
+}
+#else
 SEC("xdp_udp_fullnat_forward")
 int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 {
@@ -296,7 +397,7 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	char dmac[ETH_ALEN] = {0x68, 0x91, 0xd0, 0x61, 0x94, 0xca};
 	__be32 snat_key, *snat_value;
 	int l4proto;
-	__u32 cpu_num;
+	__u32 cpu_num, cpu_num_from_server;
 	void *session_nat_table_inner;
 	struct flow_key sess_key;
 	struct flow_value *sess_value = NULL, sess_value_from_client, sess_value_from_server;
@@ -394,7 +495,7 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 			policy_key.vip = sess_key.dst;
 			policy_key.vport = sess_key.port16[1];
 
-			policy_value = bpf_map_lookup_elem(&vpi_vport_policy, &policy_key);
+			policy_value = bpf_map_lookup_elem(&vip_vport_policy, &policy_key);
 			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESSION_FIRST_SEEN);
 			if (!policy_value) {
 				action = XDP_DROP;
@@ -435,6 +536,18 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	sess_value_from_client.fnat.port16[1] = policy_value->bport;
 	bpf_map_update_elem(session_nat_table_inner, &sess_key, &sess_value_from_client, 0);
 
+#ifdef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
+	cpu_num_from_server = 0;
+#else
+	cpu_num_from_server = get_cpu_num_by_rss(&sess_value_from_client.fnat);
+#endif
+	if (cpu_num != cpu_num_from_server) {
+		session_nat_table_inner = bpf_map_lookup_elem(&session_nat_table_outer, &cpu_num_from_server);
+		if (!session_nat_table_inner) {
+			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SESS_MAP_DOES_NOT_EXIST);
+			goto done;
+		}
+	}
 	/*
 	 * D:d -> C:c	->	B:b	->	A:a
 	 * 		server -> client: D:d -> C:c
@@ -495,7 +608,9 @@ error:
 	xdp_stats_validity(ctx, pkt_validity_key);
 	goto done;
 }
+#endif
 
+#ifdef __XDP_IP_FORWARD__
 SEC("xdp_ip_forward")
 int xdp_ip_forward_func(struct xdp_md *ctx)
 {
@@ -600,7 +715,9 @@ error:
 	xdp_stats_validity(ctx, key2);
 	goto done;
 }
+#endif
 
+#ifdef __XDP_ICMP_ECHO__
 SEC("xdp_icmp_echo")
 int xdp_icmp_echo_func(struct xdp_md *ctx)
 {
@@ -732,11 +849,14 @@ out:
 	xdp_stats_action(ctx, action);
 	return action;
 }
+#endif
 
+#ifdef __XDP_PASS__
 SEC("xdp_pass")
 int xdp_pass_func(struct xdp_md *ctx)
 {
 	return XDP_PASS;
 }
+#endif
 
 char _license[] SEC("license") = "GPL";
