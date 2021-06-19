@@ -1,4 +1,4 @@
-DIRS = sk_filter tc xdp_icmp_echo
+DIRS = sk_filter tc xdp
 DIRS_CLEAN = $(addsuffix _clean,$(DIRS))
 
 .PHONY: clean $(DIRS) $(DIRS_CLEAN)
