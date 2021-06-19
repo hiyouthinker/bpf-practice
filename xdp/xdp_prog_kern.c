@@ -638,8 +638,8 @@ int xdp_ip_forward_func(struct xdp_md *ctx)
 	__u32 key1, key2;
 	struct collect_vlans vlans;
 	struct vlan_hdr *vlh;
-	char smac[ETH_ALEN] = {0x9c, 0x69, 0xb4, 0x60, 0x35, 0x61};
-	char dmac[ETH_ALEN] = {0x68, 0x91, 0xd0, 0x61, 0x94, 0xca};
+	struct smac_dmac_s *smac, *dmac;
+	__u32 mac_key = 0;
 	__be32 snat_ip = bpf_htonl(0xAC320249);
 	__be32 dnat_ip = bpf_htonl(0xAC320148);
 	int l4proto;
@@ -698,6 +698,19 @@ int xdp_ip_forward_func(struct xdp_md *ctx)
 #else
 		uhdr->check = 0;
 #endif
+	}
+
+	mac_key = 0;
+	smac = bpf_map_lookup_elem(&smac_dmac, &mac_key);
+	if (!smac) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_SMAC_DOES_NOT_EXIST);
+		goto done;
+	}
+	mac_key = 1;
+	dmac = bpf_map_lookup_elem(&smac_dmac, &mac_key);
+	if (!dmac) {
+		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_DMAC_DOES_NOT_EXIST);
+		goto done;
 	}
 
 	/* Build Ethernet Header */
