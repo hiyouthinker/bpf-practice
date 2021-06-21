@@ -1,10 +1,6 @@
 XDP_TARGETS := sk_filter_kern
 USER_TARGETS := sk_filter_user
 
-LLC ?= llc
-CLANG ?= clang
-CC := gcc
-
 LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
 

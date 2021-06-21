@@ -415,6 +415,12 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	nh.pos = data;
 
 	eth_type = parse_ethhdr_vlan(&nh, data_end, &eth, &vlans);
+	if (eth_type < 0) {
+		pkt_type_key = STATS_GLOBAL_PKT_ETH_HEADER_INVALID;
+		pkt_validity_key = STATS_GLOBAL_VALIDITY_ETHERNET_HEADER_MALFORM;
+		goto error;
+	}
+
 	if (vlans.id[0] != 0) {
 		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_VLAN);
 	}
@@ -434,11 +440,6 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 	default:
 		xdp_stats_pkt(ctx, STATS_GLOBAL_PKT_OTHER_VLAN);
 		pkt_validity_key = STATS_GLOBAL_VALIDITY_UNKNOWN_TAG;
-		goto error;
-	}
-
-	if (!eth || ((eth + 1) > data_end)) {
-		pkt_validity_key = STATS_GLOBAL_VALIDITY_ETHERNET_HEADER_MALFORM;
 		goto error;
 	}
 
