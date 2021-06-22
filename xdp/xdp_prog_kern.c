@@ -11,21 +11,11 @@
 #include "../common/rewrite_helpers.h"
 #include "maps_kern.h"
 
-//#define __TEST__
-//#define __XDP_PASS__
-//#define __XDP_ICMP_ECHO__
-//#define __XDP_IP_FORWARD__
-
 /*
  * verifier complains:
  *		math between pkt pointer and register with unbounded min value is not allowed
  */
 #define KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
-/*
- * unreachable insn 277
- */
-#define KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
-
 #define SUPPORT_UDP_CHECKSUM
 #define USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
 //#define USE_BUILTIN_CTZ
@@ -73,7 +63,6 @@ struct rss_ipv4_tuple {
 	};
 };
 
-#ifndef __TEST__
 static __always_inline
 int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 {
@@ -110,7 +99,7 @@ int get_pkt_type(struct hdr_cursor *nh, void *data_end, int eth_type)
 	} else if (eth_type == bpf_htons(ETH_P_IPV6)) {
 		ip_type = parse_ip6hdr(nh, data_end, &ipv6hdr);
 		switch (ip_type) {
-		case IPPROTO_ICMP:
+		case IPPROTO_ICMPV6:
 			break;
 		case IPPROTO_TCP:
 			type = STATS_GLOBAL_PKT_TCPv6;
@@ -199,7 +188,7 @@ __u32 xdp_stats_validity(struct xdp_md *ctx, __u32 key)
 {
 	struct pkt_stats *rec;
 
-	if (key >= __STATS_GLOBAL_PKT_MAX)
+	if (key >= __STATS_GLOBAL_VALIDITY_MAX)
 		return -1;
 
 	rec = bpf_map_lookup_elem(&stats_validity, &key);
@@ -217,7 +206,7 @@ __u32 xdp_stats_events(struct xdp_md *ctx, __u32 key)
 {
 	__u32 *value;
 
-	if (key >= __STATS_GLOBAL_PKT_MAX)
+	if (key >= __STATS_GLOBAL_EVENT_MAX)
 		return -1;
 
 	value = bpf_map_lookup_elem(&stats_events, &key);
@@ -226,41 +215,6 @@ __u32 xdp_stats_events(struct xdp_md *ctx, __u32 key)
 
 	lock_xadd(value, 1);
 	return 0;
-}
-
-/**
- * Calculate sum of 16-bit words from `data` of `size` bytes,
- * Size is assumed to be even, from 0 to MAX_CSUM_BYTES.
- */
-#define MAX_CSUM_WORDS 32
-#define MAX_CSUM_BYTES (MAX_CSUM_WORDS * 2)
-
-static __always_inline __u32
-sum16(const void* data, __u32 size, const void* data_end)
-{
-    __u32 s = 0, i;
-#pragma unroll
-    for (i = 0; i < MAX_CSUM_WORDS; i++) {
-        if (2*i >= size) {
-            return s; /* normal exit */
-        }
-        if (data + 2*i + 1 + 1 > data_end) {
-            return 0; /* should be unreachable */
-        }
-        s += ((const __u16*)data)[i];
-    }
-    return s;
-}
-
-/**
- * Carry upper bits and compute one's complement for a checksum.
- */
-static __always_inline __u16
-carry(__u32 csum)
-{
-    csum = (csum & 0xffff) + (csum >> 16);
-    csum = (csum & 0xffff) + (csum >> 16); // loop
-    return ~csum;
 }
 
 /*
@@ -294,6 +248,54 @@ static __always_inline __u16 icmp_checksum_diff(
 }
 #endif
 
+static inline __wsum csum_add(__wsum csum, __wsum addend)
+{
+	__u32 res = (__u32)csum;
+	res += (__u32)addend;
+	return (__wsum)(res + (res < (__u32)addend));
+}
+
+static inline __wsum csum_sub(__wsum csum, __wsum addend)
+{
+	return csum_add(csum, ~addend);
+}
+
+static __always_inline __sum16 csum_fold(__wsum csum)
+{
+	__u32 sum = (__u32)csum;
+	sum = (sum & 0xffff) + (sum >> 16);
+	sum = (sum & 0xffff) + (sum >> 16);
+	return (__sum16)~sum;
+}
+
+static __always_inline void csum_replace4(__sum16 *sum, __be32 from, __be32 to)
+{
+	__wsum tmp = csum_sub(~(__wsum)(*sum), (__wsum)from);
+
+	*sum = csum_fold(csum_add(tmp, (__wsum)to));
+}
+
+static __always_inline void udp_checksum(struct iphdr *iph, struct udphdr *udph, struct fullnat_info *fnat)
+{
+	if (iph->saddr != fnat->src)
+		csum_replace4(&udph->check, iph->saddr, fnat->src);
+	if (iph->daddr != fnat->dst)
+		csum_replace4(&udph->check, iph->daddr, fnat->dst);
+
+	if (udph->source != fnat->port16[0])
+		csum_replace4(&udph->check, (__be32)udph->source, (__be32)fnat->port16[0]);
+	if (udph->dest != fnat->port16[1])
+		csum_replace4(&udph->check, (__be32)udph->dest, (__be32)fnat->port16[1]);
+}
+
+static __always_inline void ip_checksum(struct iphdr *iph, struct fullnat_info *fnat)
+{
+	if (iph->saddr != fnat->src)
+		csum_replace4(&iph->check, iph->saddr, fnat->src);
+	if (iph->daddr != fnat->dst)
+		csum_replace4(&iph->check, iph->daddr, fnat->dst);
+}
+
 static __always_inline int ip_decrease_ttl(struct iphdr *iph)
 {
 	__u32 check = iph->check;
@@ -312,7 +314,6 @@ static __always_inline void connection_table_lookup(            void *inner_map
 		return;
 	(*value)->last_time = bpf_ktime_get_ns();
 }
-#endif
 
 #ifndef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
 /* from rte_thash.h */
@@ -355,32 +356,6 @@ static __u32 get_cpu_num_by_rss(struct fullnat_info *fnat)
 }
 #endif
 
-SEC(".text.version") char version[] = "Version: BigBro/0.1 - 2021";
-
-#ifdef __TEST__
-SEC("xdp_test")
-int xdp_test_func(struct xdp_md *ctx)
-{
-	int cpu;
-	struct flow_value sess_value_from_client;
-
-	__builtin_memset(&sess_value_from_client, 0, sizeof(sess_value_from_client));
-#if 1
-	sess_value_from_client.fnat.src = 0x12345678;
-#else
-	sess_value_from_client.fnat.src = (__u32)ctx->data_end;
-#endif
-	sess_value_from_client.fnat.dst = 0x78563412;
-	sess_value_from_client.fnat.port16[0] = 0x1234;
-	sess_value_from_client.fnat.port16[1] = 0x3412;
-	cpu = get_cpu_num_by_rss(&sess_value_from_client.fnat);
-
-	if (cpu & 0x01)
-		return XDP_TX;
-	else
-		return XDP_PASS;
-}
-#else
 SEC("xdp_udp_fullnat_forward")
 int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 {
@@ -487,7 +462,7 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 		} else {
 			xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_HIT);
 		}
-		goto modify_ip;
+		goto modify_pkt;
 	} else {
 		if (vlans.id[0] == TAG_FROM_SERVER) {
 			action = XDP_DROP;
@@ -574,26 +549,22 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_NAT_DOES_NOT_EXIST);
 		goto done;
 	}
-modify_ip:
-	iphdr->saddr = sess_value->fnat.src;
-	iphdr->daddr = sess_value->fnat.dst;
-
-	/* modify port */
+modify_pkt:
+	/* Update UDP checksum */
+#ifdef SUPPORT_UDP_CHECKSUM
+	udp_checksum(iphdr, uhdr, &sess_value->fnat);
+#else
+	uhdr->check = 0;
+#endif
+	/* modify UDP Header */
 	uhdr->source = sess_value->fnat.port16[0];
 	uhdr->dest = sess_value->fnat.port16[1];
-#ifdef SUPPORT_UDP_CHECKSUM
-	uhdr->check = 0;
-#else
-	uhdr->check = 0;
-#endif
 
-    /* Update IP checksum */
-	iphdr->check = 0;
-#ifdef KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
-	iphdr->check = carry(sum16(iphdr, sizeof(*iphdr), data_end));
-#else
-	iphdr->check = carry(sum16(iphdr, iphdr->ihl * 4, data_end));
-#endif
+	/* Update IP checksum */
+	ip_checksum(iphdr, &sess_value->fnat);
+	/* modify IP Header */
+	iphdr->saddr = sess_value->fnat.src;
+	iphdr->daddr = sess_value->fnat.dst;
 	ip_decrease_ttl(iphdr);
 
 	mac_key = 0;
@@ -623,9 +594,7 @@ error:
 	xdp_stats_validity(ctx, pkt_validity_key);
 	goto done;
 }
-#endif
 
-#ifdef __XDP_IP_FORWARD__
 SEC("xdp_ip_forward")
 int xdp_ip_forward_func(struct xdp_md *ctx)
 {
@@ -690,12 +659,19 @@ int xdp_ip_forward_func(struct xdp_md *ctx)
 		goto error;
 	} else if (l4proto == IPPROTO_UDP) {
 		struct udphdr *uhdr;
+#ifdef SUPPORT_UDP_CHECKSUM
+		struct fullnat_info fnat = {};
+#endif
 		if (parse_udphdr(&nh, data_end, &uhdr) < 0) {
 			key2 = STATS_GLOBAL_VALIDITY_UDP_HEADER_MALFORM;
 			goto error;
 		}
 #ifdef SUPPORT_UDP_CHECKSUM
-		uhdr->check = 0;
+		fnat.src = snat_ip;
+		fnat.dst = iphdr->daddr;
+		fnat.port16[0] = uhdr->source;
+		fnat.port16[1] = uhdr->dest;
+		udp_checksum(iphdr, uhdr, &fnat);
 #else
 		uhdr->check = 0;
 #endif
@@ -720,19 +696,23 @@ int xdp_ip_forward_func(struct xdp_md *ctx)
 	__builtin_memcpy(eth->h_source, smac, ETH_ALEN);
 	__builtin_memcpy(eth->h_dest, dmac, ETH_ALEN);
 
-	if (vlans.id[0] == TAG_FROM_CLIENT)
+	if (vlans.id[0] == TAG_FROM_CLIENT) {
 		/* SNAT */
+		struct fullnat_info fnat = {
+			.src = snat_ip,
+			.dst = iphdr->daddr,
+		};
+		ip_checksum(iphdr, &fnat);
 		iphdr->saddr = snat_ip;
-	else
+	}
+	else {
+		struct fullnat_info fnat = {
+			.src = iphdr->saddr,
+			.dst = dnat_ip,
+		};
+		ip_checksum(iphdr, &fnat);
 		iphdr->daddr = dnat_ip;
-
-    /* Update IP checksum */
-	iphdr->check = 0;
-#ifdef KERNEL_VERIFIER_SHUTUP_UNREACHABLE_INSN
-	iphdr->check = carry(sum16(iphdr, sizeof(*iphdr), data_end));
-#else
-	iphdr->check = carry(sum16(iphdr, iphdr->ihl * 4, data_end));
-#endif
+	}
 	ip_decrease_ttl(iphdr);
 	action = XDP_TX;
 done:
@@ -743,9 +723,7 @@ error:
 	xdp_stats_validity(ctx, key2);
 	goto done;
 }
-#endif
 
-#ifdef __XDP_ICMP_ECHO__
 SEC("xdp_icmp_echo")
 int xdp_icmp_echo_func(struct xdp_md *ctx)
 {
@@ -866,9 +844,8 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 	icmphdr->type = echo_reply;
 	icmphdr->cksum = icmp_checksum_diff(~old_csum, icmphdr, &icmphdr_old);
 #else
+	csum_replace4(&icmphdr->cksum, (__be32)icmphdr->type, (__be32)echo_reply);
 	icmphdr->type = echo_reply;
-	icmphdr->cksum = 0;
-	icmphdr->cksum = carry(sum16(icmphdr, ip_tot_len - iphdr->ihl * 4, data_end));
 #endif
 
 	action = XDP_TX;
@@ -877,14 +854,11 @@ out:
 	xdp_stats_action(ctx, action);
 	return action;
 }
-#endif
 
-#ifdef __XDP_PASS__
 SEC("xdp_pass")
 int xdp_pass_func(struct xdp_md *ctx)
 {
 	return XDP_PASS;
 }
-#endif
 
 char _license[] SEC("license") = "GPL";
