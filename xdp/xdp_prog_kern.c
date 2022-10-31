@@ -11,11 +11,6 @@
 #include "../common/rewrite_helpers.h"
 #include "maps_kern.h"
 
-/*
- * verifier complains:
- *		math between pkt pointer and register with unbounded min value is not allowed
- */
-#define KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
 #define SUPPORT_UDP_CHECKSUM
 #define USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
 //#define USE_BUILTIN_CTZ
@@ -498,14 +493,12 @@ int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 		(policy_value->bip_num > BIP_CAPACITY)) {
 		xdp_stats_events(ctx, STATS_GLOBAL_EVENT_BIP_DOES_NOT_EXIST);
 		goto done;
-	}
-	else
+	} else {
 		bip_index = bpf_ktime_get_ns() % policy_value->bip_num;
 
-#ifdef KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
-	if (bip_index >= BIP_CAPACITY)
-		bip_index = 0;
-#endif
+		if (bip_index >= BIP_CAPACITY)
+			bip_index = 0;
+	}
 
 	__builtin_memset(&sess_value_from_client, 0, sizeof(sess_value_from_client));
 	sess_value_from_client.fnat.src = *snat_value;
@@ -775,14 +768,7 @@ int xdp_icmp_echo_func(struct xdp_md *ctx)
 			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
-#ifdef KENREL_VERIFIER_SHUTUP_UNBOUNDED_MIN_VALUE
-		if (ip_tot_len & 0x8000) {
-			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
-			goto out;
-		}
-		ip_tot_len &= 0x7FFF;
-#endif
-		if (((char *)iphdr + ip_tot_len) > data_end) {
+		if (ip_tot_len > data_end - (void *)iphdr) {
 			xdp_stats_validity(ctx, STATS_GLOBAL_VALIDITY_IPv4_HEADER_MALFORM);
 			goto out;
 		}
