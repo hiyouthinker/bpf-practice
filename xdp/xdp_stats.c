@@ -13,6 +13,7 @@
 #include <bpf/bpf.h>
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
+#include <arpa/inet.h>
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"

@@ -61,6 +61,9 @@ static const struct option_wrapper long_options[] = {
 	{{"debug",       no_argument,		NULL, 'D' },
 	 "enable debug mode"},
 
+	{{"lpm",	required_argument,		NULL, 'l' },
+	 "ip: 1.1.1.1,2.2.2.0/24"},
+
 	{{"filename",    required_argument,	NULL,  1  },
 	 "Load program from <file>", "<file>"},
 
@@ -399,6 +402,94 @@ static int my_print(enum libbpf_print_level level, const char *format,
 	return vfprintf(stderr, format, args);
 }
 
+static int load_lpm_map(struct bpf_object *obj, struct config *cfg, __u64 app_id)
+{
+	int fd;
+	struct lpm_key key = {0};
+	__u32 value;
+	char *ips = cfg->ips;
+
+	if (!ips)
+		return -1;
+
+	if (cfg->debug)
+		printf("ips: [%s]\n", ips);
+
+	if (!*ips)
+		return 0;
+
+	fd = bpf_object__find_map_fd_by_name(obj, "ip_lpm_map");
+	if (fd < 0) {
+		fprintf(stderr, "ERROR: finding a map by name %s in obj file failed\n", "ip_lpm_map");
+		return -1;
+	}
+
+	while (1) {
+		char *p, *next = NULL;
+		struct in_addr addr;
+		int mask = 32;
+
+		p = strchr(ips, ',');
+		if (p) {
+			*p = 0;
+			next = p + 1;
+		}
+
+		p = strchr(ips, '/');
+		if (p) {
+			*p = 0;
+			p++;
+			mask = atoi(p);
+			if (mask <= 0 || mask > 32) {
+				fprintf(stderr, "invalid mask: %s\n", p);
+				return -1;
+			}
+		}
+		if (!inet_aton(ips, &addr)) {
+			fprintf(stderr, "invalid addr: %s\n", ips);
+			return -1;
+		}
+
+		if (cfg->debug) {
+			printf("ip/mask: %s/%d\n", ips, mask);
+		}
+
+		key.prefixlen = 64 + mask;
+		key.app_id_lo = app_id & 0xffffffff;
+		key.app_id_hi = app_id >> 32;
+		key.addr.saddr[0] = addr.s_addr;
+
+		value = addr.s_addr;
+
+		if (bpf_map_update_elem(fd, &key, &value, 0) < 0) {
+			fprintf(stderr, "failed to update map: %s\n", strerror(errno));
+			return -1;
+		}
+
+		value = 0;
+		if (bpf_map_lookup_elem(fd, &key, &value) < 0) {
+			fprintf(stderr, "failed to lookup map: %s\n", strerror(errno));
+			return -1;
+		}
+
+		if (cfg->debug) {
+			struct in_addr in;
+
+			in.s_addr = key.addr.saddr[0];
+			printf("key: %s, ", inet_ntoa(in));
+
+			in.s_addr = value;
+			printf("value: %s\n", inet_ntoa(in));
+		}
+
+		ips = next;
+		if (!next || !*next)
+			break;
+	}
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	static const char *__doc__ = "XDP loader\n"
@@ -443,6 +534,11 @@ int main(int argc, char **argv)
 		       cfg.filename, cfg.progsec);
 		printf(" - XDP prog attached on device:%s(ifindex:%d)\n",
 		       cfg.ifname, cfg.ifindex);
+	}
+
+	if (cfg.ips[0]) {
+		if (load_lpm_map(bpf_obj, &cfg, 1) < 0)
+			return -1;
 	}
 
 	if ((snat_ip_pool_init(bpf_obj) < 0)

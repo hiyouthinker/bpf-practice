@@ -31,6 +31,7 @@ struct config {
 	bool xsk_poll_mode;
 #ifdef __BIGBRO__
 	__u8 debug;
+	char ips[128];
 #endif
 };
 

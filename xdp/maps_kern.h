@@ -69,4 +69,12 @@ struct bpf_map_def SEC("maps") smac_dmac = {
 	.value_size = sizeof(struct smac_dmac_s),
 	.max_entries = 2,
 };
+
+struct bpf_map_def SEC("maps") ip_lpm_map = {
+    .type = BPF_MAP_TYPE_LPM_TRIE,
+    .key_size = sizeof(struct lpm_key),
+    .value_size = sizeof(__u32),
+    .max_entries = 1024,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
 #endif

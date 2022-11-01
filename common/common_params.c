@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqD:",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqDl:",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -161,6 +161,10 @@ void parse_cmdline_args(int argc, char **argv,
 		case 'D':
 			cfg->debug++;
 			break;
+		case 'l': {
+			strcpy(cfg->ips, optarg);
+			break;
+		}
 #endif
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);

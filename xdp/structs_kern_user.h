@@ -80,6 +80,17 @@ struct pkt_stats {
 	__u64 rx_bytes;
 };
 
+struct lpm_key {
+    __u32 prefixlen;
+    __u32 app_id_lo;
+    __u32 app_id_hi;
+    union {
+        struct in6_addr in6_saddr;
+        __u32 saddr[4];
+        __u8 addr[16];
+    } addr;
+} __attribute__((packed));
+
 enum {
 	STATS_GLOBAL_PKT_ALL,
 	STATS_GLOBAL_PKT_ETH_HEADER_INVALID,
