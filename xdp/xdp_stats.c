@@ -394,7 +394,7 @@ int main(int argc, char **argv)
 		static int loop = 0;
 		printf("=============================================================================== %03d\n", loop++);
 		for (i = 0; i < global_index; i++) {
-			stats_poll(map_fd[i], &reals[i], cfg.verbose);
+			stats_poll(map_fd[i], &reals[i], verbose);
 		}
 		sleep(3);
 	}

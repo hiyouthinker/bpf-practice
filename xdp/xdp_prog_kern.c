@@ -299,8 +299,8 @@ static __always_inline int ip_decrease_ttl(struct iphdr *iph)
 	return --iph->ttl;
 }
 
-static __always_inline void connection_table_lookup(            void *inner_map
-				, struct flow_key *key, struct flow_value **value)
+static __always_inline void connection_table_lookup(void *inner_map,
+				struct flow_key *key, struct flow_value **value)
 {
 	if (!value)
 		return;

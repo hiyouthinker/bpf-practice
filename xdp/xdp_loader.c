@@ -58,8 +58,8 @@ static const struct option_wrapper long_options[] = {
 	{{"quiet",       no_argument,		NULL, 'q' },
 	 "Quiet mode (no output)"},
 
-	{{"verbose",	no_argument,		NULL, 'v' },
-		 "set level to debug"},
+	{{"debug",       no_argument,		NULL, 'D' },
+	 "enable debug mode"},
 
 	{{"filename",    required_argument,	NULL,  1  },
 	 "Load program from <file>", "<file>"},
@@ -415,7 +415,7 @@ int main(int argc, char **argv)
 	strcpy(cfg.filename, "xdp_prog_kern.o");
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
 
-	if (cfg.verbose) {
+	if (verbose) {
 		libbpf_set_print(my_print);
 	}
 

@@ -30,9 +30,7 @@ struct config {
 	int xsk_if_queue;
 	bool xsk_poll_mode;
 #ifdef __BIGBRO__
-	bool verbose;	/* for xdp_stats or xdp_loader */
-	bool pin_map;
-	int debug_level;
+	__u8 debug;
 #endif
 };
 

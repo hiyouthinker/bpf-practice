@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqvPD:",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqD:",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -158,21 +158,9 @@ void parse_cmdline_args(int argc, char **argv,
 			verbose = false;
 			break;
 #ifdef __BIGBRO__
-		case 'v':
-			cfg->verbose = 1;
+		case 'D':
+			cfg->debug++;
 			break;
-		case 'P':
-			cfg->pin_map = 1;
-			break;
-		case 'D': {
-			int level = atoi(optarg);
-			if ((level < 0) || (level > 3)) {
-				fprintf(stderr, "ERR: -D level level must is [0 3]\n");
-				goto error;
-			}
-			cfg->debug_level = level;
-			break;
-		}
 #endif
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);
