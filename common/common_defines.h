@@ -32,6 +32,7 @@ struct config {
 #ifdef __BIGBRO__
 	__u8 debug;
 	char ips[128];
+	int id;
 #endif
 };
 
