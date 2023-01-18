@@ -73,36 +73,6 @@ static const struct option_wrapper long_options[] = {
 	{{0, 0, NULL,  0 }, NULL, false}
 };
 
-static int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
-{
-	int err;
-	struct bpf_map *map;
-	char buf[512];
-
-	bpf_object__for_each_map(map, obj) {
-		int len = snprintf(buf, sizeof(buf), "%s/%s", cfg->pin_dir, bpf_map__name(map));
-		if (len < 0)
-			return -EINVAL;
-		else if (len >= sizeof(buf))
-			return -ENAMETOOLONG;
-		if (access(buf, F_OK ) < 0)
-			continue;
-		if (unlink(buf) < 0) {
-			fprintf(stderr, "ERR: UNpinning maps in %s\n", buf);
-			return EXIT_FAIL_BPF;
-		}
-	}
-
-	if (verbose)
-		printf(" - Pinning maps in %s/\n", cfg->pin_dir);
-
-	err = bpf_object__pin_maps(obj, cfg->pin_dir);
-	if (err)
-		return EXIT_FAIL_BPF;
-
-	return 0;
-}
-
 static int map_in_map_inner_create(struct bpf_object *obj)
 {
 	struct bpf_map *outer_map;
@@ -495,7 +465,6 @@ int main(int argc, char **argv)
 	static const char *__doc__ = "XDP loader\n"
 		" - Allows selecting BPF section --progsec name to XDP-attach to --dev\n";
 	struct bpf_object *bpf_obj;
-	int len;
 
 	struct config cfg = {
 		.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE,
@@ -520,8 +489,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	len = snprintf(cfg.pin_dir, sizeof(cfg.pin_dir), "%s/%s", PIN_BASEDIR, cfg.ifname);
-	if (len < 0) {
+	if (snprintf(cfg.pin_dir, sizeof(cfg.pin_dir), "%s/%s", PIN_BASEDIR, cfg.ifname) < 0) {
 		fprintf(stderr, "ERR: creating pin dirname\n");
 		return 0;
 	}

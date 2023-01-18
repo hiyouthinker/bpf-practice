@@ -3,6 +3,7 @@
 #include <net/if.h>     /* IF_NAMESIZE */
 #include <stdlib.h>     /* exit(3) */
 #include <errno.h>
+#include <unistd.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -408,4 +409,34 @@ int open_bpf_map_file(const char *pin_dir,
 	}
 
 	return fd;
+}
+
+int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
+{
+	int err;
+	struct bpf_map *map;
+	char buf[512];
+
+	bpf_object__for_each_map(map, obj) {
+		int len = snprintf(buf, sizeof(buf), "%s/%s", cfg->pin_dir, bpf_map__name(map));
+		if (len < 0)
+			return -EINVAL;
+		else if (len >= sizeof(buf))
+			return -ENAMETOOLONG;
+		if (access(buf, F_OK ) < 0)
+			continue;
+		if (unlink(buf) < 0) {
+			fprintf(stderr, "ERR: UNpinning maps in %s\n", buf);
+			return -1000;
+		}
+	}
+
+	if (verbose)
+		printf(" - Pinning maps in %s/\n", cfg->pin_dir);
+
+	err = bpf_object__pin_maps(obj, cfg->pin_dir);
+	if (err)
+		return -1001;
+
+	return 0;
 }
