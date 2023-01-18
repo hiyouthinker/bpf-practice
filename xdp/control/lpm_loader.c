@@ -18,7 +18,7 @@
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "../include/structs_kern_user.h"
+#include "../include/lpm_structs.h"
 
 static const struct option_wrapper long_options[] = {
 

@@ -7,7 +7,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
-#include "../include/structs_kern_user.h"
+#include "../include/lpm_structs.h"
 
 struct bpf_map_def SEC("maps") ip_lpm_map = {
     .type = BPF_MAP_TYPE_LPM_TRIE,

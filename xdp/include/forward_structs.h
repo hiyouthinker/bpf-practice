@@ -2,8 +2,8 @@
  * BigBro @2021 - 2023
  */
 
-#ifndef __COMMON_KERN_USER_H
-#define __COMMON_KERN_USER_H
+#ifndef __FORWARD_STRUCTS_H
+#define __FORWARD_STRUCTS_H
 
 #include <linux/if_ether.h>	/* for ETH_ALEN */
 #include <linux/ipv6.h>     /* for struct in6_addr */
@@ -80,17 +80,6 @@ struct pkt_stats {
 	__u64 rx_packets;
 	__u64 rx_bytes;
 };
-
-struct lpm_key {
-    __u32 prefixlen;
-    __u32 app_id_lo;
-    __u32 app_id_hi;
-    union {
-        struct in6_addr in6_saddr;
-        __u32 saddr[4];
-        __u8 addr[16];
-    } addr;
-} __attribute__((packed));
 
 enum {
 	STATS_GLOBAL_PKT_ALL,

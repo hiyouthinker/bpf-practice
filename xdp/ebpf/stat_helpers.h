@@ -3,6 +3,9 @@
  * BigBro @2021 - 2023
  */
 
+#ifndef __STATS_HELPERS_H
+#define __STATS_HELPERS_H
+
 /* LLVM maps __sync_fetch_and_add() as a built-in function to the BPF atomic add
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
  */
@@ -105,3 +108,5 @@ __u32 xdp_stats_events(struct xdp_md *ctx, __u32 key)
 	lock_xadd(value, 1);
 	return 0;
 }
+
+#endif

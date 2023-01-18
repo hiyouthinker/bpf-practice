@@ -8,7 +8,7 @@
 #include <bpf/bpf_endian.h>
 
 #include "../common/parsing_helpers.h"
-#include "../include/structs_kern_user.h"
+#include "../include/forward_structs.h"
 #include "stat_helpers.h"
 
 #define SUPPORT_UDP_CHECKSUM
