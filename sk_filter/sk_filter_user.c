@@ -1,5 +1,5 @@
 /*
- * Author: BigBro / 2021.05
+ * Author: BigBro / 2021.05 - 2023
  */
 
 #include <stdio.h>
@@ -35,16 +35,17 @@ static void usage(char *cmd)
 {
 	printf("usage: %s\n", cmd);
 	printf("\t-h\tshow this help\n");
-	printf("\t-f\tfull path of program\n");
-	printf("\t-p\tlocal IP\n");
-	printf("\t-r\tThe proportion of first program (x/10, pls input the x, x is [0 and 10]\n");
+	printf("\t-f\tfile path (default: sk_filter_kern.o)\n");
+	printf("\t-l\tlocal ip\n");
+	printf("\t-p\tlocal port\n");
+	printf("\t-r\tThe ratio of first program (x/10, pls input the x, x is [0 and 10]\n");
 	exit(0);
 }
 
 int main(int argc, char **argv)
 {
 	char *filename = "sk_filter_kern.o";
-	int opt, port, proportion;
+	int opt, port, ratio = 5;
 	int fd, one = 1;
 	struct sockaddr_in addr;
 	struct bpf_prog_load_attr prog_load_attr = {
@@ -68,8 +69,8 @@ int main(int argc, char **argv)
 				port = 80;
 			break;
 		case 'r':
-			proportion = atoi(optarg);
-			if (proportion < 0 || proportion > 10)
+			ratio = atoi(optarg);
+			if (ratio < 0 || ratio > 10)
 				usage(argv[0]);
 			break;
 		default:
@@ -83,6 +84,7 @@ int main(int argc, char **argv)
 
 	if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
 		return 1;
+
 	if (!prog_fd) {
 		printf("bpf_prog_load_xattr: %s\n", strerror(errno));
 		exit(0);
@@ -97,7 +99,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < MY_MAP_REUSEPORT_SIZE; i++) {
 		int value = 1;
 
-		if (i < proportion)
+		if (i < ratio)
 			value = 0;
 
 		bpf_map_update_elem(map_fd, &i, &value, BPF_ANY);
@@ -125,7 +127,7 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
-	if (listen(fd, 5)) {
+	if (listen(fd, 20)) {
 		printf("listen: %s\n", strerror(errno));
 		exit(0);
 	}
@@ -133,7 +135,7 @@ int main(int argc, char **argv)
 	if(setsockopt(fd, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd, sizeof(prog_fd)) < 0) {
 		printf("setsockopt(SO_ATTACH_REUSEPORT_EBPF) failed: %s\n", strerror(errno));
 	}
-	close(fd);
+
 	printf("reuse / bind / listen / attach_ebpf success!\n");
 
 	while (1) {
@@ -151,5 +153,7 @@ int main(int argc, char **argv)
 		printf("success: %d/%d, failure: %d\n", value1, value2, value3);
 		sleep(1);
 	}
+
+	close(fd);
 	return 0;
 }
