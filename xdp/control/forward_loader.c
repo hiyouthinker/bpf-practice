@@ -61,9 +61,6 @@ static const struct option_wrapper long_options[] = {
 	{{"debug",       no_argument,		NULL, 'D' },
 	 "enable debug mode"},
 
-	{{"lpm",	required_argument,		NULL, 'l' },
-	 "ip: 1.1.1.1,2.2.2.0/24"},
-
 	{{"filename",    required_argument,	NULL,  1  },
 	 "Load program from <file>", "<file>"},
 
