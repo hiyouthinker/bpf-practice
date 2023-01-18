@@ -23,9 +23,6 @@ USER_OBJ := ${USER_C:.c=.o}
 COMMON_DIR ?= ../common/
 LIBBPF_DIR ?= ../libbpf/src/
 
-COPY_LOADER ?=
-LOADER_DIR ?= $(COMMON_DIR)/../xdp_icmp_echo
-
 OBJECT_LIBBPF = $(LIBBPF_DIR)/libbpf.a
 
 # Extend if including Makefile already added some
@@ -49,7 +46,7 @@ BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
 # BigBro @ 2021.05.21
 LIBS = -l:libbpf.a -lelf -lz $(USER_LIBS)
 
-all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS)
+all: llvm-check $(USER_TARGETS) $(XDP_OBJ)
 
 .PHONY: clean $(CLANG) $(LLC)
 
@@ -57,23 +54,9 @@ clean:
 	rm -rf $(LIBBPF_DIR)/build
 	$(MAKE) -C $(LIBBPF_DIR) clean
 	$(MAKE) -C $(COMMON_DIR) clean
-	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS)
+	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ)
 	rm -f *.ll
 	rm -f *~
-
-ifdef COPY_LOADER
-$(COPY_LOADER): $(LOADER_DIR)/${COPY_LOADER:=.c} $(COMMON_H)
-	make -C $(LOADER_DIR) $(COPY_LOADER)
-	cp $(LOADER_DIR)/$(COPY_LOADER) $(COPY_LOADER)
-endif
-
-ifdef COPY_STATS
-$(COPY_STATS): $(LOADER_DIR)/${COPY_STATS:=.c} $(COMMON_H)
-	make -C $(LOADER_DIR) $(COPY_STATS)
-	cp $(LOADER_DIR)/$(COPY_STATS) $(COPY_STATS)
-# Needing xdp_stats imply depending on header files:
-EXTRA_DEPS += $(COMMON_DIR)/xdp_stats_kern.h $(COMMON_DIR)/xdp_stats_kern_user.h
-endif
 
 # For build dependency on this file, if it gets updated
 COMMON_MK = $(COMMON_DIR)/common.mk

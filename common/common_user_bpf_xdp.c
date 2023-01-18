@@ -233,9 +233,9 @@ struct bpf_object *load_bpf_object_file_reuse_maps(const char *file,
 	return obj;
 }
 
-static struct bpf_object * __load_bpf_object_file(char *filename
-							, int (*create)(struct bpf_object *obj)
-							, int (*update)(struct bpf_object *obj))
+static struct bpf_object * __load_bpf_object_file(char *filename,
+							int (*create)(struct bpf_object *obj),
+							int (*update)(struct bpf_object *obj))
 {
 	struct bpf_object_open_attr open_attr = {};
 	struct bpf_object *obj;
@@ -276,9 +276,9 @@ static struct bpf_object * __load_bpf_object_file(char *filename
 	return obj;
 }
 
-struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg
-						, int (*create)(struct bpf_object *obj)
-						, int (*update)(struct bpf_object *obj))
+struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg,
+						int (*create)(struct bpf_object *obj),
+						int (*update)(struct bpf_object *obj))
 {
 	struct bpf_program *bpf_prog;
 	struct bpf_object *bpf_obj;

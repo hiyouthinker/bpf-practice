@@ -513,21 +513,22 @@ int main(int argc, char **argv)
 	if (cfg.ifindex == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n\n");
 		usage(argv[0], __doc__, long_options, (argc == 1));
-		return EXIT_FAIL_OPTION;
+		return 0;
 	}
 	if (cfg.do_unload) {
-		return xdp_link_detach(cfg.ifindex, cfg.xdp_flags, 0);
+		xdp_link_detach(cfg.ifindex, cfg.xdp_flags, 0);
+		return 0;
 	}
 
 	len = snprintf(cfg.pin_dir, sizeof(cfg.pin_dir), "%s/%s", PIN_BASEDIR, cfg.ifname);
 	if (len < 0) {
 		fprintf(stderr, "ERR: creating pin dirname\n");
-		return EXIT_FAIL_OPTION;
+		return 0;
 	}
 
 	bpf_obj = load_bpf_and_xdp_attach(&cfg, map_in_map_inner_create, map_in_map_outer_update);
 	if (!bpf_obj)
-		return EXIT_FAIL_BPF;
+		return 0;
 
 	if (verbose) {
 		printf("Success: Loaded BPF-object(%s) and used section(%s)\n",
@@ -538,14 +539,14 @@ int main(int argc, char **argv)
 
 	if (cfg.ips[0]) {
 		if (load_lpm_map(bpf_obj, &cfg, 1) < 0)
-			return -1;
+			return 0;
 	}
 
 	if ((snat_ip_pool_init(bpf_obj) < 0)
 		|| (vip_vport_policy_init(bpf_obj) < 0)
 		|| (rss_hash_key_init(bpf_obj) < 0)
 		|| (smac_dmac_init(bpf_obj) < 0))
-		return EXIT_FAIL_BPF;
+		return 0;
 
 	if (!cfg.reuse_maps) {
 		int err1, err2;
@@ -553,8 +554,9 @@ int main(int argc, char **argv)
 		err2 = map_in_map_inner_pin(&cfg);
 		if (err1 || err2) {
 			fprintf(stderr, "ERR: pinning maps\n");
-			return err1;
+			return 0;
 		}
 	}
-	return EXIT_OK;
+
+	return 0;
 }
