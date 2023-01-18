@@ -19,7 +19,7 @@
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "structs_kern_user.h"
+#include "../include/structs_kern_user.h"
 
 #define ARRAY_ELEM_NUM(array) (sizeof(array) / sizeof((array)[0]))
 #define IPv4(a,b,c,d) ((__u32)(((a) & 0xff) << 24) | \

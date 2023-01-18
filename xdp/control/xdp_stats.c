@@ -17,7 +17,7 @@
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
-#include "structs_kern_user.h"
+#include "../include/structs_kern_user.h"
 
 #include <bpf/libbpf.h>
 #include <bpf/bpf_endian.h>	/* for bpf_htonl etc. */

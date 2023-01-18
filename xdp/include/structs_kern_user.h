@@ -1,11 +1,12 @@
 /*
- * BigBro/2021
+ * BigBro @2021 - 2023
  */
 
 #ifndef __COMMON_KERN_USER_H
 #define __COMMON_KERN_USER_H
 
 #include <linux/if_ether.h>	/* for ETH_ALEN */
+#include <linux/ipv6.h>     /* for struct in6_addr */
 
 #define SESSION_NAT_INNER_MAP_NAME			"session_nat_table_inner"
 
