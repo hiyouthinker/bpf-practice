@@ -55,6 +55,7 @@ clean:
 	$(MAKE) -C $(LIBBPF_DIR) clean
 	$(MAKE) -C $(COMMON_DIR) clean
 	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ)
+	rm -f */*.ll
 	rm -f *.ll
 	rm -f *~
 

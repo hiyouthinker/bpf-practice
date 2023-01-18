@@ -1,5 +1,5 @@
 XDP_TARGETS  := ebpf/lpm_prog
-XDP_TARGETS  := ebpf/forward_prog
+XDP_TARGETS  += ebpf/forward_prog
 
 USER_TARGETS := control/lpm_loader
 USER_TARGETS += control/lpm_reader
