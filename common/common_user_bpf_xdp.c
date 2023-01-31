@@ -251,8 +251,15 @@ static struct bpf_object * __load_bpf_object_file(char *filename,
 
 	obj = bpf_object__open_xattr(&open_attr);
 	if (IS_ERR_OR_NULL(obj)) {
-		fprintf(stderr, "ERR: loading BPF-OBJ file(%s) (%d): %s\n",
-			filename, ENOENT, strerror(-ENOENT));
+		int err_num;
+
+		if (!obj)
+			err_num = ENOENT;
+		else
+			err_num = -(int)PTR_ERR(obj);
+
+		fprintf(stderr, "ERR: opening BPF-OBJ file(%s) (%d): %s\n",
+			filename, err_num, strerror(err_num));
 		return NULL;
 	}
 
@@ -265,7 +272,7 @@ static struct bpf_object * __load_bpf_object_file(char *filename,
 	if (err) {
 		bpf_object__close(obj);
 		fprintf(stderr, "ERR: loading BPF-OBJ file(%s) (%d): %s\n",
-			filename, EINVAL, strerror(-EINVAL));
+			filename, err, strerror(-err));
 		return NULL;
 	}
 
@@ -302,6 +309,7 @@ struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg,
 #else
 		bpf_obj = load_bpf_object_file(cfg->filename, offload_ifindex);
 #endif
+
 	if (!bpf_obj) {
 		fprintf(stderr, "ERR: loading file: %s\n", cfg->filename);
 		exit(EXIT_FAIL_BPF);
@@ -411,18 +419,46 @@ int open_bpf_map_file(const char *pin_dir,
 	return fd;
 }
 
+struct my_bpf_map {
+	int fd;
+	char *name;
+};
+
+static int change_map_name(void *ptr)
+{
+	struct my_bpf_map *map = ptr;
+	char *p;
+
+	p = strchr(map->name, '.');
+	if (p)
+		*p = '_';
+
+	return 0;
+}
+
 int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
 {
 	int err;
 	struct bpf_map *map;
 	char buf[512];
+	bool has_map;
 
 	bpf_object__for_each_map(map, obj) {
-		int len = snprintf(buf, sizeof(buf), "%s/%s", cfg->pin_dir, bpf_map__name(map));
+		int len;
+
+		change_map_name(map);
+
+		len = snprintf(buf, sizeof(buf), "%s/%s", cfg->pin_dir, bpf_map__name(map));
 		if (len < 0)
 			return -EINVAL;
 		else if (len >= sizeof(buf))
 			return -ENAMETOOLONG;
+
+		has_map = true;
+
+		if (verbose)
+			printf("Pin %s map to %s\n", bpf_map__name(map), cfg->pin_dir);
+
 		if (access(buf, F_OK ) < 0)
 			continue;
 		if (unlink(buf) < 0) {
@@ -431,8 +467,11 @@ int pin_maps_in_bpf_object(struct bpf_object *obj, struct config *cfg)
 		}
 	}
 
-	if (verbose)
-		printf(" - Pinning maps in %s/\n", cfg->pin_dir);
+	if (!has_map) {
+		if (verbose)
+			printf("No map\n");
+		return 0;
+	}
 
 	err = bpf_object__pin_maps(obj, cfg->pin_dir);
 	if (err)
