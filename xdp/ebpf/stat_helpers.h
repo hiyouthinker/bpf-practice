@@ -13,33 +13,33 @@
 #define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
 #endif
 
-struct bpf_map_def SEC("maps") stats_action = {
-	.type        = BPF_MAP_TYPE_PERCPU_ARRAY,
-	.key_size    = sizeof(__u32),
-	.value_size  = sizeof(__u64),	/* Note: 8-bytes alignment in kernel */
-	.max_entries = __XDP_ACTION_MAX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, __XDP_ACTION_MAX);
+	__type(key, __u32);
+	__type(value, __u64); /* Note: 8-bytes alignment in kernel */
+} stats_action SEC(".maps");
 
-struct bpf_map_def SEC("maps") stats_pkt = {
-	.type        = BPF_MAP_TYPE_ARRAY,
-	.key_size    = sizeof(__u32),
-	.value_size  = sizeof(struct pkt_stats),
-	.max_entries = __STATS_GLOBAL_PKT_MAX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __STATS_GLOBAL_PKT_MAX);
+	__type(key, __u32);
+	__type(value, struct pkt_stats);
+} stats_pkt SEC(".maps");
 
-struct bpf_map_def SEC("maps") stats_validity = {
-	.type        = BPF_MAP_TYPE_ARRAY,
-	.key_size    = sizeof(__u32),
-	.value_size  = sizeof(struct pkt_stats),
-	.max_entries = __STATS_GLOBAL_VALIDITY_MAX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __STATS_GLOBAL_VALIDITY_MAX);
+	__type(key, __u32);
+	__type(value, struct pkt_stats);
+} stats_validity SEC(".maps");
 
-struct bpf_map_def SEC("maps") stats_events = {
-	.type        = BPF_MAP_TYPE_ARRAY,
-	.key_size    = sizeof(__u32),
-	.value_size  = sizeof(__u32),
-	.max_entries = __STATS_GLOBAL_EVENT_MAX,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, __STATS_GLOBAL_EVENT_MAX);
+	__type(key, __u32);
+	__type(value, __u32);
+} stats_events SEC(".maps");
 
 static __always_inline
 __u32 xdp_stats_action(struct xdp_md *ctx, __u32 key)

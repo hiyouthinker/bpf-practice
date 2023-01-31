@@ -21,40 +21,40 @@
 #define TAG_FROM_SERVER		808		//	708
 #define TAG_TO_NEXTHOP		808		//	708
 
-struct bpf_map_def SEC("maps") session_nat_table_outer = {
-	.type = BPF_MAP_TYPE_ARRAY_OF_MAPS,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(__u32),
-	.max_entries = MAX_SUPPORTED_CPUS,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+	__uint(max_entries, MAX_SUPPORTED_CPUS);
+	__type(key, __u32);
+	__type(value, __u32);
+} session_nat_table_outer SEC(".maps");
 
-struct bpf_map_def SEC("maps") snat_ip_pool = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(__u32),
-	.max_entries = SNAT_IP_POOL_CAPACITY,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, SNAT_IP_POOL_CAPACITY);
+	__type(key, __u32);
+	__type(value, __u32);
+} snat_ip_pool SEC(".maps");
 
-struct bpf_map_def SEC("maps") vip_vport_policy = {
-	.type = BPF_MAP_TYPE_HASH,
-	.key_size = sizeof(struct vip_vport_policy_key_s),
-	.value_size = sizeof(struct vip_vport_policy_value_s),
-	.max_entries = VIP_VPORT_POLICY_CAPACITY,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, VIP_VPORT_POLICY_CAPACITY);
+	__type(key, struct vip_vport_policy_key_s);
+	__type(value, struct vip_vport_policy_value_s);
+} vip_vport_policy SEC(".maps");
 
-struct bpf_map_def SEC("maps") rss_hash_key = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(struct rss_hash_key_s),
-	.max_entries = 1,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct rss_hash_key_s);
+} rss_hash_key SEC(".maps");
 
-struct bpf_map_def SEC("maps") smac_dmac = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(struct smac_dmac_s),
-	.max_entries = 2,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 2);
+	__type(key, __u32);
+	__type(value, struct smac_dmac_s);
+} smac_dmac SEC(".maps");
 
 #ifndef USE_GLOBAL_MAP_INSTEAD_OF_PERCPU
 #ifdef USE_BUILTIN_CTZ

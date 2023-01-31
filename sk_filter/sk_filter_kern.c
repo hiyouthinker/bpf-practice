@@ -3,17 +3,16 @@
  */
 
 #include <linux/bpf.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
 #include <bpf/bpf_helpers.h>
+
 #include "common_kern_user.h"
 
-struct bpf_map_def SEC("maps") my_map = {
-	.type = BPF_MAP_TYPE_ARRAY,
-	.key_size = sizeof(__u32),
-	.value_size = sizeof(int),
-	.max_entries = MY_MAP_TOTAL_SIZE,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, MY_MAP_TOTAL_SIZE);
+	__type(key, __u32);
+	__type(value, int);
+} my_map SEC(".maps");
 
 SEC("reuseport")
 int bpf_reuseport_select(struct __sk_buff *skb)
@@ -47,4 +46,5 @@ int bpf_reuseport_select(struct __sk_buff *skb)
 	}
 	return 0;
 }
+
 char _license[] SEC("license") = "GPL";

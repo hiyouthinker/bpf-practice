@@ -9,13 +9,13 @@
 
 #include "../include/lpm_structs.h"
 
-struct bpf_map_def SEC("maps") ip_lpm_map = {
-    .type = BPF_MAP_TYPE_LPM_TRIE,
-    .key_size = sizeof(struct lpm_key),
-    .value_size = sizeof(__u32),
-    .max_entries = 1024,
-    .map_flags = BPF_F_NO_PREALLOC,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
+	__uint(max_entries, 1024);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, struct lpm_key);
+	__type(value, __u32);
+} ip_lpm_map SEC(".maps");
 
 static __always_inline int ipv4_lpm_lookup(__be32 saddr, __u64 app_id, __u32 prefixlen)
  {
