@@ -9,6 +9,7 @@
 
 #ifdef __BIGBRO__
 #define PIN_BASEDIR		"/sys/fs/bpf"
+#define FLAG_USE_MAP_IN_MAP	0x01
 #endif
 
 struct config {
@@ -33,6 +34,7 @@ struct config {
 	__u8 debug;
 	char ips[128];
 	int id;
+	__u8 flags;
 #endif
 };
 
