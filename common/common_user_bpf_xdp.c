@@ -193,8 +193,14 @@ static int reuse_maps(struct bpf_object *obj, const char *path)
 		}
 
 		pinned_map_fd = bpf_obj_get(buf);
-		if (pinned_map_fd < 0)
+		if (pinned_map_fd < 0) {
+			if (strstr(buf, ".rodata")) {
+				printf("Warning: .rodata does not need reuse\n");
+				continue;
+			}
+			printf("failed to get %s\n", buf);
 			return pinned_map_fd;
+		}
 
 		err = bpf_map__reuse_fd(map, pinned_map_fd);
 		if (err)
@@ -219,8 +225,8 @@ struct bpf_object *load_bpf_object_file_reuse_maps(const char *file,
 
 	err = reuse_maps(obj, pin_dir);
 	if (err) {
-		fprintf(stderr, "ERR: failed to reuse maps for object %s, pin_dir=%s\n",
-				file, pin_dir);
+		fprintf(stderr, "ERR: failed to reuse maps for object %s, pin_dir=%s, error: %s\n",
+				file, pin_dir, strerror(-err));
 		return NULL;
 	}
 
