@@ -92,7 +92,7 @@ void parse_cmdline_args(int argc, char **argv,
 	}
 
 	/* Parse commands line args */
-	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqDl:i:m",
+	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqDl:i:ms",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -169,6 +169,9 @@ void parse_cmdline_args(int argc, char **argv,
 			break;
 		case 'm':
 			cfg->flags |= FLAG_USE_MAP_IN_MAP;
+			break;
+		case 's':
+			cfg->flags |= FLAG_SHOW_STATISTICS;
 			break;
 #endif
 		case 'Q':

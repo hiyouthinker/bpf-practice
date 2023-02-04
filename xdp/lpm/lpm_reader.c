@@ -36,7 +36,7 @@ static const struct option_wrapper long_options[] = {
 	{{"dev",         required_argument,	NULL, 'd' },
 	 "Operate on device <ifname>", "<ifname>", true},
 
-	{{"lpm",	required_argument,		NULL, 'l' },
+	{{"lpm",         required_argument,	NULL, 'l' },
 	 "ip format: 1.1.1.1,2.2.2.0/24"},
 
 	{{"quiet",       no_argument,		NULL, 'q' },

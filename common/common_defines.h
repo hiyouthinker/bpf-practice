@@ -9,7 +9,8 @@
 
 #ifdef __BIGBRO__
 #define PIN_BASEDIR		"/sys/fs/bpf"
-#define FLAG_USE_MAP_IN_MAP	0x01
+#define FLAG_USE_MAP_IN_MAP  0x01
+#define FLAG_SHOW_STATISTICS 0x02
 #endif
 
 struct config {
