@@ -4,6 +4,7 @@ XDP_TARGETS  += test/test_prog
 XDP_TARGETS  += statistics/packet_stat_prog
 
 USER_TARGETS := common/common_loader
+USER_TARGETS += common/common_reader
 USER_TARGETS += forward/forward_loader
 USER_TARGETS += forward/forward_reader
 USER_TARGETS += lpm/lpm_loader
