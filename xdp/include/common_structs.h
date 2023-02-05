@@ -104,9 +104,27 @@ struct packet_description {
 		struct udphdr *udph;
 	};
 
+	struct {
+		__u32 reason[__STAT_PKT_MAX];
+	} stat;
 	__u8 tcp_flags;
 
 	void *next_hdr;
+};
+
+#define FILTER_FLAG_SIP      0x01
+#define FILTER_FLAG_DIP      0x02
+#define FILTER_FLAG_SPORT    0x04
+#define FILTER_FLAG_DPORT    0x08
+#define FILTER_FLAG_PROTO    0x10
+#define FILTER_FLAG_TCP_FLAG 0x20
+
+struct filter {
+	struct flow_key flow;
+	__u16 filter_flags;
+	union {
+		int tcp_flags;
+	};
 };
 
 #endif

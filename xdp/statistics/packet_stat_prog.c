@@ -4,7 +4,6 @@
 
 #include <linux/bpf.h>
 #include <linux/in.h>
-#include <linux/time.h>
 #include <linux/types.h>
 #include <stdbool.h>
 #include <linux/ip.h>
@@ -14,10 +13,7 @@
 #include <bpf/bpf_endian.h>
 
 #include "../include/common_structs.h"
-
-#ifndef lock_xadd
-#define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
-#endif
+#include "stat_helpers.h"
 
 #define VLAN_VID_MASK		0x0fff /* VLAN Identifier */
 
@@ -29,13 +25,6 @@ struct vlan_ethhdr {
 	__be16		h_vlan_encapsulated_proto;
 };
 
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(max_entries, __STAT_PKT_MAX);
-	__type(key, __u32);
-	__type(value, __u64);
-} pkt_stat SEC(".maps");
-
 static __always_inline bool is_tcp(struct iphdr *iph)
 {
 	return iph->protocol == IPPROTO_TCP;
@@ -44,16 +33,6 @@ static __always_inline bool is_tcp(struct iphdr *iph)
 static __always_inline bool is_udp(struct iphdr *iph)
 {
 	return iph->protocol == IPPROTO_UDP;
-}
-
-static __always_inline void xdp_stats_events(__u32 key)
-{
-	__u64 *value;
-
-	value = bpf_map_lookup_elem(&pkt_stat, &key);
-	if (value) {
-		lock_xadd(value, 1);
-	}
 }
 
 static __always_inline int parse_eth_header(struct xdp_md *ctx, struct packet_description *pkt)
@@ -71,7 +50,7 @@ static __always_inline int parse_eth_header(struct xdp_md *ctx, struct packet_de
 	if (eth->h_proto != bpf_htons(ETH_P_8021Q)) {
 		pkt->next_hdr = eth + 1;
 
-		xdp_stats_events(STAT_PKT_ETH);
+		reason_add(pkt, STAT_PKT_ETH);
 
 		return eth->h_proto;
 	}
@@ -82,7 +61,7 @@ static __always_inline int parse_eth_header(struct xdp_md *ctx, struct packet_de
 
 	pkt->next_hdr = veth + 1;
 
-	xdp_stats_events(STAT_PKT_VLAN);
+	reason_add(pkt, STAT_PKT_VLAN);
 
     return veth->h_vlan_encapsulated_proto;
 }
@@ -116,7 +95,7 @@ static __always_inline int parse_ipv4_header(struct xdp_md *ctx, struct packet_d
 	pkt->l3_header = iph;
 	pkt->next_hdr = (char *)iph + hdrsize;
 
-	xdp_stats_events(STAT_PKT_IPV4);
+	reason_add(pkt, STAT_PKT_IPV4);
 
 	return 0;
 }
@@ -148,13 +127,13 @@ static __always_inline int parse_tcp_header(struct xdp_md *ctx, struct packet_de
 			pkt->tcp_flags = TCP_SYNACK_FLAG;
 		} else {
 			pkt->tcp_flags = TCP_SYN_FLAG;
-			xdp_stats_events(STAT_PKT_TCP_SYN);
+			reason_add(pkt, STAT_PKT_TCP_SYN);
 		}
 	} else if (tcph->fin && tcph->rst) {
 		return -1;
 	} else if (tcph->fin) {
 		pkt->tcp_flags = TCP_FIN_FLAG;
-		xdp_stats_events(STAT_PKT_TCP_FIN);
+		reason_add(pkt, STAT_PKT_TCP_FIN);
 	} else if (tcph->rst) {
 		pkt->tcp_flags = TCP_RST_FLAG;
 	} else if (tcph->ack) {
@@ -165,7 +144,7 @@ static __always_inline int parse_tcp_header(struct xdp_md *ctx, struct packet_de
 
 	pkt->l4_header = tcph;
 
-	xdp_stats_events(STAT_PKT_TCP);
+	reason_add(pkt, STAT_PKT_TCP);
 
 	return 0;
 }
@@ -208,11 +187,16 @@ SEC("xdp_pass") int xdp_pass_prog(struct xdp_md *ctx)
 {
 	struct packet_description pkt = {};
 
-	xdp_stats_events(STAT_PKT_ALL);
+	reason_add(&pkt, STAT_PKT_ALL);
 
 	if (pasre_packet(ctx, &pkt) < 0)
 		goto done;
 
+	if (!packet_filter_match(ctx, &pkt)) {
+		goto done;
+	}
+
+	reason_stat_all(&pkt);
 done:
 	return XDP_PASS;
 }
