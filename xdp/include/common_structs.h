@@ -20,8 +20,10 @@ enum {
 	STAT_PKT_IPV6,
 	STAT_PKT_TCP,
 	STAT_PKT_TCP_SYN,
+	STAT_PKT_TCP_SYNACK,
+	STAT_PKT_TCP_FIN,
 	STAT_PKT_UDP,
-	__STAT_MAX,
+	__STAT_PKT_MAX,
 };
 
 typedef struct flow_key {
@@ -74,15 +76,37 @@ typedef struct flow_value {
 	__u32 expires;
 } flow_value_t;
 
+enum {
+	TCP_SYN_FLAG,
+	TCP_SYNACK_FLAG,
+	TCP_ACK_FLAG,
+	TCP_FIN_FLAG,
+	TCP_RST_FLAG,
+	TCP_NONE_FLAG,
+};
+
 struct packet_description {
-    struct flow_key flow;
+	struct flow_key flow;
 
-    __u16 vlanid;
-    __be16 ip_id;
-    __u8 ttl;
-    __u8 tcp_flags;
+	union {
+		void *l2_header;
+		struct ethhdr *eth;
+		struct vlan_ethhdr *veth;
+	};
+	union {
+		void *l3_header;
+		struct iphdr *ip4h;
+		struct ipv6hdr *ip6h;
+	};
+	union {
+		void *l4_header;
+		struct tcphdr *tcph;
+		struct udphdr *udph;
+	};
 
-    void *next_hdr;
+	__u8 tcp_flags;
+
+	void *next_hdr;
 };
 
 #endif

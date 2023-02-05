@@ -38,15 +38,29 @@ static const struct option_wrapper long_options[] = {
 	{{0, 0, NULL,  0 }, NULL, false}
 };
 
+static const char *pkt_stat_titles[] = {
+	[STAT_PKT_ALL]        = "STAT_PKT_ALL",
+	[STAT_PKT_ETH]        = "STAT_PKT_ETH",
+	[STAT_PKT_VLAN]       = "STAT_PKT_VLAN",
+	[STAT_PKT_IPV4]       = "STAT_PKT_IPV4",
+	[STAT_PKT_IPV6]       = "STAT_PKT_IPV6",
+	[STAT_PKT_TCP]        = "STAT_PKT_TCP",
+	[STAT_PKT_TCP_SYN]    = "STAT_PKT_TCP_SYN",
+	[STAT_PKT_TCP_SYNACK] = "STAT_PKT_TCP_SYNACK",
+	[STAT_PKT_TCP_FIN]    = "STAT_PKT_TCP_FIN",
+	[STAT_PKT_UDP]        = "STAT_PKT_UDP",
+	[__STAT_PKT_MAX]      = "-",
+};
+
 static int get_map_fd_and_check(const char *pin_dir, char *map_name)
 {
 	int fd;
 	struct bpf_map_info info = {0};
 	struct bpf_map_info exp = {
-   		.type = BPF_MAP_TYPE_ARRAY,
-    	.key_size = sizeof(__u32),
-    	.value_size = sizeof(__u64),
-    	.max_entries = __STAT_MAX,
+		.type = BPF_MAP_TYPE_ARRAY,
+		.key_size = sizeof(__u32),
+		.value_size = sizeof(__u64),
+		.max_entries = __STAT_PKT_MAX,
 	};
 
 	fd = open_bpf_map_file(pin_dir, map_name, &info);
@@ -75,14 +89,14 @@ static int lookup_elem_and_show(int fd)
 	__u32 key = 0;
 	__u64 value;
 
-	for (key = 0; key < __STAT_MAX; key++) {
+	for (key = 0; key < __STAT_PKT_MAX; key++) {
 		if (bpf_map_lookup_elem(fd, &key, &value) < 0) {
 			printf("failed to lookup map: %s\n", strerror(errno));
 			return -1;
 		}
 
 		if (value)
-			printf("%d: %llu\n", key, value);
+			printf("%-20s: %llu\n", pkt_stat_titles[key], value);
 	}
 
 	return 0;
@@ -90,7 +104,7 @@ static int lookup_elem_and_show(int fd)
 
 static int lookup_elem_and_statistic(int fd)
 {
-	__u32 key = 0;
+	__u32 key = STAT_PKT_TCP_SYN;
 	__u64 value, prev, diff;
 
 	if (bpf_map_lookup_elem(fd, &key, &prev) < 0) {
@@ -112,7 +126,7 @@ static int lookup_elem_and_statistic(int fd)
 		diff = value - prev;
 		prev = value;
 
-		printf("diff: %llu\n", diff);
+		printf("pps for TCP SYN: %llu\n", diff/2);
 	}
 
 	return 0;
