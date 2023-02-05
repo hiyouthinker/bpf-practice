@@ -22,6 +22,13 @@
 #include "../common/common_user_bpf_xdp.h"
 #include "../include/common_structs.h"
 
+#define NIPQUAD(addr) \
+	((unsigned char *)&addr)[0], \
+	((unsigned char *)&addr)[1], \
+	((unsigned char *)&addr)[2], \
+	((unsigned char *)&addr)[3]
+#define NIPQUAD_FMT "%u.%u.%u.%u"
+
 static const struct option_wrapper long_options[] = {
 	{{"help",        no_argument,		NULL, 'h' },
 	 "Show help", false},
@@ -29,11 +36,26 @@ static const struct option_wrapper long_options[] = {
 	{{"dev",         required_argument,	NULL, 'd' },
 	 "Operate on device <ifname>", "<ifname>", true},
 
-	{{"show",           no_argument,	NULL, 's' },
+	{{"show",        no_argument,	NULL, 's' },
 	 "show statistics"},
 
 	{{"quiet",       no_argument,		NULL, 'q' },
 	 "Quiet mode (no output)"},
+
+	{{"saddr",       required_argument,	NULL, 4 },
+	 "source ip address", "<IP>"},
+
+	{{"daddr",       required_argument,	NULL, 5 },
+	 "destination ip address", "<IP>"},
+
+	{{"sport",       required_argument,	NULL, 6 },
+	 "source port", "<PORT>"},
+
+	{{"dport",       required_argument,	NULL, 7 },
+	 "destination port", "<PORT>"},
+
+	{{"proto",       required_argument,	NULL, 8 },
+	 "tcp or udp", "<L4 Protocol>"},
 
 	{{0, 0, NULL,  0 }, NULL, false}
 };
@@ -52,23 +74,18 @@ static const char *pkt_stat_titles[] = {
 	[__STAT_PKT_MAX]      = "-",
 };
 
-static int get_map_fd_and_check(const char *pin_dir, char *map_name)
+static int get_map_fd_and_check(const char *pin_dir, char *map_name, struct bpf_map_info *exp)
 {
 	int fd;
 	struct bpf_map_info info = {0};
-	struct bpf_map_info exp = {
-		.type = BPF_MAP_TYPE_ARRAY,
-		.key_size = sizeof(__u32),
-		.value_size = sizeof(__u64),
-		.max_entries = __STAT_PKT_MAX,
-	};
+
 
 	fd = open_bpf_map_file(pin_dir, map_name, &info);
 	if (fd < 0) {
 		return -1;
 	}
 
-	if (check_map_fd_info(&info, &exp)) {
+	if (check_map_fd_info(&info, exp)) {
 		printf("ERR: map %s via FD not compatible\n", map_name);
 		close(fd);
 		return -1;
@@ -126,7 +143,7 @@ static int lookup_elem_and_statistic(int fd)
 		diff = value - prev;
 		prev = value;
 
-		printf("pps for TCP SYN: %llu\n", diff/2);
+		printf("packets: %llu, pps: %llu\n", value, diff/2);
 	}
 
 	return 0;
@@ -135,11 +152,24 @@ static int lookup_elem_and_statistic(int fd)
 int main(int argc, char **argv)
 {
 	static const char *__doc__ = "XDP reader program\n";
-	int fd;
+	struct bpf_map_info exp1 = {
+		.type = BPF_MAP_TYPE_ARRAY,
+		.key_size = sizeof(__u32),
+		.value_size = sizeof(__u64),
+		.max_entries = __STAT_PKT_MAX,
+	};
+	struct bpf_map_info exp2 = {
+		.type = BPF_MAP_TYPE_ARRAY,
+		.key_size = sizeof(__u32),
+		.value_size = sizeof(struct filter),
+		.max_entries = 1,
+	};
+	int stat_fd, filter_fd = -1;
 	struct config cfg = {
 		.ifname = "ens192",
 	};
 	char pin_dir[128];
+	struct filter filter = {};
 
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
 
@@ -148,15 +178,43 @@ int main(int argc, char **argv)
 	if (verbose)
 		printf("Prepare to read data from %s/%s map\n", pin_dir, "pkt_stat");
 
-	fd = get_map_fd_and_check(pin_dir, "pkt_stat");
-	if (fd < 0)
-		return 0;
+	stat_fd = get_map_fd_and_check(pin_dir, "pkt_stat", &exp1);
+	if (stat_fd < 0)
+		goto done;
 
 	if (cfg.flags & FLAG_SHOW_STATISTICS) {
-		lookup_elem_and_show(fd);
+		lookup_elem_and_show(stat_fd);
 	} else {
-		lookup_elem_and_statistic(fd);
+		__u32 key = 0;
+
+		filter.flow.src = cfg.saddr;
+		filter.flow.dst = cfg.daddr;
+		filter.flow.port16[0] = cfg.sport;
+		filter.flow.port16[1] = cfg.dport;
+		filter.flow.proto = cfg.proto;
+
+		filter_fd = get_map_fd_and_check(pin_dir, "pkt_filter", &exp2);
+
+		if (verbose) {
+			printf("tcp: %d " NIPQUAD_FMT ":%d => " NIPQUAD_FMT ":%d\n",
+				cfg.proto,
+				NIPQUAD(cfg.saddr), ntohs(cfg.sport),
+				NIPQUAD(cfg.daddr), ntohs(cfg.dport));
+		}
+
+		if (bpf_map_update_elem(filter_fd, &key, &filter, 0)) {
+			fprintf(stderr, "Failed to update pkt_filter maps: %s\n", strerror(errno));
+			goto done;
+		}
+
+		lookup_elem_and_statistic(stat_fd);
 	}
+
+done:
+	if (stat_fd >= 0)
+		close(stat_fd);
+	if (filter_fd >= 0)
+		close(filter_fd);
 
 	return 0;
 }

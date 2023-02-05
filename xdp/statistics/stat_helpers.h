@@ -67,27 +67,27 @@ static __always_inline bool packet_filter_match(struct xdp_md *ctx, struct packe
 	if (!value)
 		return true;
 	
-	if (value->filter_flags & FILTER_FLAG_SIP) {
+	if (value->flow.src) {
 		if (pkt->flow.src != value->flow.src)
 			return false;
 	}
 
-	if (value->filter_flags & FILTER_FLAG_DIP) {
+	if (value->flow.dst) {
 		if (pkt->flow.dst != value->flow.dst)
 			return false;
 	}
 
-	if (value->filter_flags & FILTER_FLAG_SPORT) {
+	if (value->flow.port16[0]) {
 		if (pkt->flow.port16[0] != value->flow.port16[0])
 			return false;
 	}
 
-	if (value->filter_flags & FILTER_FLAG_DPORT) {
+	if (value->flow.port16[1]) {
 		if (pkt->flow.port16[1] != value->flow.port16[1])
 			return false;
 	}
 
-	if (value->filter_flags & FILTER_FLAG_PROTO) {
+	if (value->flow.proto) {
 		if (pkt->flow.proto != value->flow.proto)
 			return false;
 	}

@@ -10,6 +10,8 @@
 #include <linux/if_link.h> /* XDP_FLAGS_* depend on kernel-headers installed */
 #include <linux/if_xdp.h>
 
+#include <arpa/inet.h>		/* for struct in_addr */
+
 #include "common_params.h"
 
 int verbose = 1;
@@ -85,6 +87,8 @@ void parse_cmdline_args(int argc, char **argv,
 	int longindex = 0;
 	char *dest;
 	int opt;
+	struct in_addr addr;
+	int num;
 
 	if (option_wrappers_to_options(options_wrapper, &long_options)) {
 		fprintf(stderr, "Unable to malloc()\n");
@@ -172,6 +176,46 @@ void parse_cmdline_args(int argc, char **argv,
 			break;
 		case 's':
 			cfg->flags |= FLAG_SHOW_STATISTICS;
+			break;
+		case 4:
+			if (!inet_aton(optarg, &addr)) {
+				fprintf(stderr, "invalid saddr: %s\n", optarg);
+				goto error;
+			}
+			cfg->saddr = addr.s_addr;
+			break;
+		case 5:
+			if (!inet_aton(optarg, &addr)) {
+				fprintf(stderr, "invalid daddr: %s\n", optarg);
+				goto error;
+			}
+			cfg->daddr = addr.s_addr;
+			break;
+		case 6:
+			num = atoi(optarg);
+			if (num <= 0 || num > 65535) {
+				fprintf(stderr, "invalid sport: %s\n", optarg);
+				goto error;
+			}
+			cfg->sport = htons(num);
+			break;
+		case 7:
+			num = atoi(optarg);
+			if (num <= 0 || num > 65535) {
+				fprintf(stderr, "invalid dport: %s\n", optarg);
+				goto error;
+			}
+			cfg->dport = htons(num);
+			break;
+		case 8:
+			if (!strcasecmp(optarg, "tcp")) {
+				cfg->proto = IPPROTO_TCP;
+			} else if (!strcasecmp(optarg, "udp")) {
+				cfg->proto = IPPROTO_UDP;
+			} else {
+				fprintf(stderr, "invalid protocol: %s\n", optarg);
+				goto error;
+			}
 			break;
 #endif
 		case 'Q':

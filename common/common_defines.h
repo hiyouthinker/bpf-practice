@@ -36,6 +36,13 @@ struct config {
 	char ips[128];
 	int id;
 	__u8 flags;
+
+	/* for filter */
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
+	__u8 proto;
 #endif
 };
 
