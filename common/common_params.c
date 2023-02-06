@@ -248,6 +248,18 @@ void parse_cmdline_args(int argc, char **argv,
 				goto error;
 			}
 			break;
+		case 9:
+			cfg->show_flags = SHOW_FLAG_TCP_FLAG;
+			break;
+		case 10:
+			cfg->show_flags = SHOW_FLAG_TCP_SYN_FLAG;
+			break;
+		case 11:
+			cfg->show_flags = SHOW_FLAG_TCP_FIN_FLAG;
+			break;
+		case 12:
+			cfg->show_flags = SHOW_FLAG_UDP_FLAG;
+			break;
 #endif
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);

@@ -46,10 +46,10 @@ static const struct option_wrapper long_options[] = {
 	 "Quiet mode (no output)"},
 
 	{{"saddr",       required_argument,	NULL, 4 },
-	 "source ip address", "<IP>[/<MASK>]"},
+	 "source address", "<IP>[/<MASK>]"},
 
 	{{"daddr",       required_argument,	NULL, 5 },
-	 "destination ip address", "<IP>[/<MASK>]"},
+	 "destination address", "<IP>[/<MASK>]"},
 
 	{{"sport",       required_argument,	NULL, 6 },
 	 "source port", "<PORT>"},
@@ -59,6 +59,18 @@ static const struct option_wrapper long_options[] = {
 
 	{{"proto",       required_argument,	NULL, 8 },
 	 "tcp or udp", "<L4 Protocol>"},
+
+	{{"tcp",       no_argument,	NULL, 9 },
+	 "tcp packet"},
+
+	{{"tcp-syn",   no_argument,	NULL, 10 },
+	 "tcp Syn packet"},
+
+	{{"tcp-fin",   no_argument,	NULL, 11 },
+	 "tcp Fin packet"},
+
+	{{"udp",       no_argument,	NULL, 12 },
+	 "udp packet"},
 
 	{{0, 0, NULL,  0 }, NULL, false}
 };
@@ -122,10 +134,26 @@ static int lookup_elem_and_show(int fd)
 	return 0;
 }
 
-static int lookup_elem_and_statistic(int fd)
+static int lookup_elem_and_statistic(int fd, struct config *cfg)
 {
-	__u32 key = STAT_PKT_TCP_SYN;
+	__u32 key;
 	__u64 value, prev, diff;
+
+	switch (cfg->show_flags) {
+	case SHOW_FLAG_TCP_SYN_FLAG:
+		key = STAT_PKT_TCP_SYN;
+		break;
+	case SHOW_FLAG_TCP_FIN_FLAG:
+		key = STAT_PKT_TCP_FIN;
+		break;
+	case SHOW_FLAG_UDP_FLAG:
+		key = STAT_PKT_UDP;
+		break;
+	case SHOW_FLAG_TCP_FLAG:
+	default:
+		key = STAT_PKT_TCP;
+		break;
+	}
 
 	if (bpf_map_lookup_elem(fd, &key, &prev) < 0) {
 		printf("failed to lookup map: %s\n", strerror(errno));
@@ -146,7 +174,7 @@ static int lookup_elem_and_statistic(int fd)
 		diff = value - prev;
 		prev = value;
 
-		printf("packets: %llu, pps: %llu\n", value, diff/2);
+		printf("%s packets: %llu, pps: %llu\n", pkt_stat_titles[key], value, diff/2);
 	}
 
 	return 0;
@@ -213,7 +241,7 @@ int main(int argc, char **argv)
 			goto done;
 		}
 
-		lookup_elem_and_statistic(stat_fd);
+		lookup_elem_and_statistic(stat_fd, &cfg);
 	}
 
 done:

@@ -11,6 +11,13 @@
 #define PIN_BASEDIR		"/sys/fs/bpf"
 #define FLAG_USE_MAP_IN_MAP  0x01
 #define FLAG_SHOW_STATISTICS 0x02
+
+enum {
+	SHOW_FLAG_TCP_FLAG = 1,
+	SHOW_FLAG_TCP_SYN_FLAG,
+	SHOW_FLAG_TCP_FIN_FLAG,
+	SHOW_FLAG_UDP_FLAG,
+};
 #endif
 
 struct config {
@@ -45,6 +52,7 @@ struct config {
 	__be16 sport;
 	__be16 dport;
 	__u8 proto;
+	__u8 show_flags;
 #endif
 };
 
