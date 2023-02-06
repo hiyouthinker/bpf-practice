@@ -112,15 +112,12 @@ struct packet_description {
 	void *next_hdr;
 };
 
-#define FILTER_FLAG_SIP      0x01
-#define FILTER_FLAG_DIP      0x02
-#define FILTER_FLAG_SPORT    0x04
-#define FILTER_FLAG_DPORT    0x08
-#define FILTER_FLAG_PROTO    0x10
-#define FILTER_FLAG_TCP_FLAG 0x20
+#define FILTER_FLAG_TCP_FLAG 0x01
 
 struct filter {
 	struct flow_key flow;
+	__be32 src_mask;
+	__be32 dst_mask;
 	__u16 filter_flags;
 	union {
 		int tcp_flags;

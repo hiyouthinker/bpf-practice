@@ -78,6 +78,45 @@ int option_wrappers_to_options(const struct option_wrapper *wrapper,
 	return 0;
 }
 
+#ifdef __BIGBRO__
+static int parse_ip_mask(char *input, __be32 *ip, __be32 *mask)
+{
+	char *p;
+	char param[64];
+	struct in_addr addr;
+
+	strcpy(param, input);
+
+	p = strchr(param, '/');
+	if (p) {
+		int num;
+		__u32 one = 1;
+
+		*p++ = '\0';
+
+		num = atoi(p);
+		if (num <= 0 || num > 32) {
+			fprintf(stderr, "invalid mask of saddr: %s\n", p);
+			return -1;
+		}
+
+		*mask = htonl(~((one << (32 - num)) - 1));
+	} else {
+		*mask = 0xffffffff;
+	}
+
+	if (!inet_aton(param, &addr)) {
+		fprintf(stderr, "invalid ip: %s\n", param);
+		return -1;
+	}
+
+	*ip = addr.s_addr;
+	*ip &= *mask;
+
+	return 0;
+}
+#endif
+
 void parse_cmdline_args(int argc, char **argv,
 			const struct option_wrapper *options_wrapper,
                         struct config *cfg, const char *doc)
@@ -86,9 +125,7 @@ void parse_cmdline_args(int argc, char **argv,
 	bool full_help = false;
 	int longindex = 0;
 	char *dest;
-	int opt;
-	struct in_addr addr;
-	int num;
+	int opt, num;
 
 	if (option_wrappers_to_options(options_wrapper, &long_options)) {
 		fprintf(stderr, "Unable to malloc()\n");
@@ -178,18 +215,12 @@ void parse_cmdline_args(int argc, char **argv,
 			cfg->flags |= FLAG_SHOW_STATISTICS;
 			break;
 		case 4:
-			if (!inet_aton(optarg, &addr)) {
-				fprintf(stderr, "invalid saddr: %s\n", optarg);
+			if (parse_ip_mask(optarg, &cfg->saddr, &cfg->smask) < 0)
 				goto error;
-			}
-			cfg->saddr = addr.s_addr;
 			break;
 		case 5:
-			if (!inet_aton(optarg, &addr)) {
-				fprintf(stderr, "invalid daddr: %s\n", optarg);
+			if (parse_ip_mask(optarg, &cfg->daddr, &cfg->dmask) < 0)
 				goto error;
-			}
-			cfg->daddr = addr.s_addr;
 			break;
 		case 6:
 			num = atoi(optarg);

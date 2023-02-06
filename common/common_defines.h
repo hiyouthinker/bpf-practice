@@ -39,7 +39,9 @@ struct config {
 
 	/* for filter */
 	__be32 saddr;
+	__be32 smask;
 	__be32 daddr;
+	__be32 dmask;
 	__be16 sport;
 	__be16 dport;
 	__u8 proto;

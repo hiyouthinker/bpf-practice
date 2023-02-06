@@ -62,18 +62,35 @@ static __always_inline bool packet_filter_match(struct xdp_md *ctx, struct packe
 {
 	__u32 key = 0;
 	struct filter *value;
+#if 0
+	static const char fmt1[] = "%d, %pI4:%d";
+	static const char fmt2[] = "          => %pI4:%d";
+	static const char fmt3[] = "                       mask: %pI4/%pI4";
+#endif
 
 	value = bpf_map_lookup_elem(&pkt_filter, &key);
 	if (!value)
 		return true;
-	
+
+#if 0
+	bpf_trace_printk(fmt1, sizeof(fmt1),
+			value->flow.proto,
+			&value->flow.src, bpf_ntohs(value->flow.port16[0]));
+
+	bpf_trace_printk(fmt2, sizeof(fmt2),
+			&value->flow.dst, bpf_ntohs(value->flow.port16[1]));
+
+	bpf_trace_printk(fmt3, sizeof(fmt3),
+			&value->src_mask, &value->dst_mask);
+#endif
+
 	if (value->flow.src) {
-		if (pkt->flow.src != value->flow.src)
+		if ((pkt->flow.src & value->src_mask) != value->flow.src)
 			return false;
 	}
 
 	if (value->flow.dst) {
-		if (pkt->flow.dst != value->flow.dst)
+		if ((pkt->flow.dst & value->dst_mask) != value->flow.dst)
 			return false;
 	}
 

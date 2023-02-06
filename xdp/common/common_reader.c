@@ -39,14 +39,17 @@ static const struct option_wrapper long_options[] = {
 	{{"show",        no_argument,	NULL, 's' },
 	 "show statistics"},
 
+	{{"debug",       no_argument,		NULL, 'D' },
+	 "enable debug mode"},
+
 	{{"quiet",       no_argument,		NULL, 'q' },
 	 "Quiet mode (no output)"},
 
 	{{"saddr",       required_argument,	NULL, 4 },
-	 "source ip address", "<IP>"},
+	 "source ip address", "<IP>[/<MASK>]"},
 
 	{{"daddr",       required_argument,	NULL, 5 },
-	 "destination ip address", "<IP>"},
+	 "destination ip address", "<IP>[/<MASK>]"},
 
 	{{"sport",       required_argument,	NULL, 6 },
 	 "source port", "<PORT>"},
@@ -188,18 +191,21 @@ int main(int argc, char **argv)
 		__u32 key = 0;
 
 		filter.flow.src = cfg.saddr;
+		filter.src_mask = cfg.smask;
 		filter.flow.dst = cfg.daddr;
+		filter.dst_mask = cfg.dmask;
 		filter.flow.port16[0] = cfg.sport;
 		filter.flow.port16[1] = cfg.dport;
 		filter.flow.proto = cfg.proto;
 
 		filter_fd = get_map_fd_and_check(pin_dir, "pkt_filter", &exp2);
 
-		if (verbose) {
-			printf("tcp: %d " NIPQUAD_FMT ":%d => " NIPQUAD_FMT ":%d\n",
+		if (cfg.debug) {
+			printf("%d " NIPQUAD_FMT ":%d => " NIPQUAD_FMT ":%d " NIPQUAD_FMT " - " NIPQUAD_FMT "\n",
 				cfg.proto,
 				NIPQUAD(cfg.saddr), ntohs(cfg.sport),
-				NIPQUAD(cfg.daddr), ntohs(cfg.dport));
+				NIPQUAD(cfg.daddr), ntohs(cfg.dport),
+				NIPQUAD(cfg.smask), NIPQUAD(cfg.dmask));
 		}
 
 		if (bpf_map_update_elem(filter_fd, &key, &filter, 0)) {
