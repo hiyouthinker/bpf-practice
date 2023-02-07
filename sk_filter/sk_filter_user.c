@@ -54,6 +54,8 @@ int main(int argc, char **argv)
 	struct bpf_object *obj;
 	int prog_fd, map_fd, i;
 	char *local_ip = "0.0.0.0";
+	__u32 key;
+	__u64 value1, value2, prev, diff;
 
 	while ((opt = getopt(argc, argv, "f:l:p:r:h")) != -1) {
 		switch (opt) {
@@ -138,20 +140,29 @@ int main(int argc, char **argv)
 
 	printf("reuse / bind / listen / attach_ebpf success!\n");
 
-	while (1) {
-		int key, value1, value2, value3;
+	key = MY_MAP_STATS_SOCKET1;
+	bpf_map_lookup_elem(map_fd, &key, &value1);
 
-		key = MY_MAP_STATS_SUCCESS_FIRST;
+	key = MY_MAP_STATS_SOCKET2;
+	bpf_map_lookup_elem(map_fd, &key, &value2);
+
+	prev = value1 + value2;
+
+	while (1) {
+		__u64 tmp;
+
+		key = MY_MAP_STATS_SOCKET1;
 		bpf_map_lookup_elem(map_fd, &key, &value1);
 
-		key = MY_MAP_STATS_SUCCESS_SECOND;
+		key = MY_MAP_STATS_SOCKET2;
 		bpf_map_lookup_elem(map_fd, &key, &value2);
 
-		key = MY_MAP_STATS_FAILURE;
-		bpf_map_lookup_elem(map_fd, &key, &value3);
+		tmp = value1 + value2;
+		diff = tmp - prev;
+		prev = tmp;
 
-		printf("success: %d/%d, failure: %d\n", value1, value2, value3);
-		sleep(1);
+		printf("packet: %llu(%llu + %llu), cps: %llu\n", tmp, value1, value2, diff/2);
+		sleep(2);
 	}
 
 	close(fd);

@@ -11,7 +11,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(max_entries, MY_MAP_TOTAL_SIZE);
 	__type(key, __u32);
-	__type(value, int);
+	__type(value, __u64);
 } my_map SEC(".maps");
 
 SEC("reuseport")
@@ -27,10 +27,7 @@ int bpf_reuseport_select(struct __sk_buff *skb)
 	if (value) {
 		int *stats;
 
-		if (*value == 0)
-			key = MY_MAP_STATS_SUCCESS_FIRST;
-		else
-			key = MY_MAP_STATS_SUCCESS_SECOND;
+		key = MY_MAP_STATS_SOCKET1 + *value;
 
 		stats = bpf_map_lookup_elem(&my_map, &key);
 		if (stats)
