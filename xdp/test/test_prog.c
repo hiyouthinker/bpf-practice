@@ -9,60 +9,64 @@
 #include <bpf/bpf_endian.h>
 
 #include "../include/common_structs.h"
+#include "../common/parsing_helpers.h"
 
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
-	__uint(max_entries, MAX_SUPPORTED_CPUS);
-	__type(key, __u32);
-	__type(value, __u32);
-} session_nat_table_outer SEC(".maps");
-
-#ifdef USE_BPF_TIMER
-static int my_timer(void *map, struct flow_key *key, struct flow_value *val)
+SEC("xdp_pkt_parse") int xdp_pkt_parse_prog(struct xdp_md *ctx)
 {
-	return 0;
-}
-#endif
+	__u64 cpuid = bpf_get_smp_processor_id();
 
-SEC("xdp_test") int xdp_test_prog(struct xdp_md *ctx)
-{
-	/* 10.10.1.63:60897 -> 10.10.2.112:8080 | 10.10.11.112:8080 -> 10.10.10.100:60897 */
-	flow_key_t key = {
-		.src = bpf_htonl(0x0a0a013f),
-		.dst = bpf_htonl(0x0a0a0270),
-		.port16 = {
-			[0] = bpf_htons(60897),
-			[1] = bpf_htons(8080),
-		},
-		.proto = IPPROTO_TCP,
-	};
-	flow_value_t *val;
-	void *inner_map;
-	int cpu_id = 6;
-	static const char fmt1[] = "inner_map map does not exist - CPU%d";
-	static const char fmt2[] = "val does not exist - key %pI4:%d => %pI4";
-	static const char fmt3[] = "val: %pI4:%d => %pI4";
+//	if (cpuid > 7) {
+		int eth_type, ip_type;
+		void *data_end = (void *)(long)ctx->data_end;
+		void *data = (void *)(long)ctx->data;
+		struct hdr_cursor nh;
+		struct collect_vlans vlans = {};
+		struct ethhdr *eth;
+		struct iphdr *iphdr;
+		struct tcphdr *thdr;
 
-	inner_map = bpf_map_lookup_elem(&session_nat_table_outer, &cpu_id);
-	if (!inner_map) {
-		bpf_trace_printk(fmt1, sizeof(fmt1), cpu_id);
-		goto done;
-	}
+		nh.pos = data;
 
-	val = bpf_map_lookup_elem(inner_map, &key);
-	if (!val) {
-		bpf_trace_printk(fmt2, sizeof(fmt2), &key.src, bpf_ntohs(key.port16[0]), &key.dst);
-		goto done;
-	}
+		eth_type = parse_ethhdr_vlan(&nh, data_end, &eth, &vlans);
+		if (eth_type < 0) {
+			goto done;
+		}
 
-	bpf_trace_printk(fmt3, sizeof(fmt3), &val->key.src, bpf_ntohs(val->key.port16[0]), &val->key.dst);
+		if (eth_type != bpf_htons(ETH_P_IP)) {
+		//	bpf_printk("ether proto: 0x%04x", bpf_ntohs(eth_type));
+			goto done;
+		}
 
-#ifdef USE_BPF_TIMER
-	if (!bpf_timer_init(&val->timer, inner_map, CLOCK_BOOTTIME)) {
-		bpf_timer_set_callback(&val->timer, my_timer);
-		bpf_timer_start(&val->timer, 9 * 1000000000, 0);
-	}
-#endif
+		ip_type = parse_iphdr(&nh, data_end, &iphdr);
+
+		if (ip_type == IPPROTO_ICMP) {
+			bpf_printk("cpuid is %d, ingress_ifindex: %d, rx_queue_index: %d", cpuid, ctx->ingress_ifindex, ctx->rx_queue_index);
+			bpf_printk("ICMP: %pI4 => %pI4, vlan id: %d", &iphdr->saddr, &iphdr->daddr, vlans.id[0]);
+			goto done;
+		}
+
+		if (ip_type != IPPROTO_TCP) {
+			goto done;
+		}
+
+		if (parse_tcphdr(&nh, data_end, &thdr) < 0) {
+			bpf_printk("invalid tcp header");
+			goto done;
+		}
+
+		if (bpf_ntohs(thdr->source) != 8080 && bpf_ntohs(thdr->dest) != 8080
+		    && bpf_ntohs(thdr->source) != 4080 && bpf_ntohs(thdr->dest) != 4080)
+			goto done;
+
+		if (vlans.id[0] == 0)
+			goto done;
+
+		bpf_printk("cpuid is %d, ingress_ifindex: %d, rx_queue_index: %d", cpuid, ctx->ingress_ifindex, ctx->rx_queue_index);
+		bpf_printk("vlan id: %d, %d => %d", vlans.id[0], bpf_ntohs(thdr->source), bpf_ntohs(thdr->dest));
+
+		bpf_printk("TCP: %pI4 => %pI4, rst: %d", &iphdr->saddr, &iphdr->daddr, thdr->rst);
+		bpf_printk("TCP: syn: %d, ack: %d, fin: %d", thdr->syn, thdr->ack, thdr->fin);
+//	}
 
 done:
 	return XDP_PASS;
