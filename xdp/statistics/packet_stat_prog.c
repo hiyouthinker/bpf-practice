@@ -125,6 +125,7 @@ static __always_inline int parse_tcp_header(struct xdp_md *ctx, struct packet_de
 			return -1;
 		} else if (tcph->ack) {
 			pkt->tcp_flags = TCP_SYNACK_FLAG;
+			reason_add(pkt, STAT_PKT_TCP_SYNACK);
 		} else {
 			pkt->tcp_flags = TCP_SYN_FLAG;
 			reason_add(pkt, STAT_PKT_TCP_SYN);

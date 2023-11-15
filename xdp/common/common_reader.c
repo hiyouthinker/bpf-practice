@@ -64,12 +64,15 @@ static const struct option_wrapper long_options[] = {
 	 "tcp packet"},
 
 	{{"tcp-syn",   no_argument,	NULL, 10 },
-	 "tcp Syn packet"},
+	 "tcp syn packet"},
 
-	{{"tcp-fin",   no_argument,	NULL, 11 },
-	 "tcp Fin packet"},
+	{{"tcp-syn-ack",   no_argument,	NULL, 11 },
+	 "tcp syn+ack packet"},
 
-	{{"udp",       no_argument,	NULL, 12 },
+	{{"tcp-fin",   no_argument,	NULL, 12 },
+	 "tcp fin packet"},
+
+	{{"udp",       no_argument,	NULL, 13 },
 	 "udp packet"},
 
 	{{0, 0, NULL,  0 }, NULL, false}
@@ -143,6 +146,9 @@ static int lookup_elem_and_statistic(int fd, struct config *cfg)
 	case SHOW_FLAG_TCP_SYN_FLAG:
 		key = STAT_PKT_TCP_SYN;
 		break;
+	case SHOW_FLAG_TCP_SYNACK_FLAG:
+		key = STAT_PKT_TCP_SYNACK;
+		break;
 	case SHOW_FLAG_TCP_FIN_FLAG:
 		key = STAT_PKT_TCP_FIN;
 		break;
@@ -159,9 +165,6 @@ static int lookup_elem_and_statistic(int fd, struct config *cfg)
 		printf("failed to lookup map: %s\n", strerror(errno));
 		return -1;
 	}
-
-	if (bpf_map_lookup_elem(fd, &key, &value) < 0)
-		return 0;
 
 	while (1) {
 		sleep(2);

@@ -255,9 +255,12 @@ void parse_cmdline_args(int argc, char **argv,
 			cfg->show_flags = SHOW_FLAG_TCP_SYN_FLAG;
 			break;
 		case 11:
-			cfg->show_flags = SHOW_FLAG_TCP_FIN_FLAG;
+			cfg->show_flags = SHOW_FLAG_TCP_SYNACK_FLAG;
 			break;
 		case 12:
+			cfg->show_flags = SHOW_FLAG_TCP_FIN_FLAG;
+			break;
+		case 13:
 			cfg->show_flags = SHOW_FLAG_UDP_FLAG;
 			break;
 #endif
