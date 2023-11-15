@@ -54,3 +54,17 @@ CPU02: PASS                                                         2
 -----------------------------------------
 ^C
 ```
+# 3 statistics program
+## 3.1 load
+```
+root@ax:~/l4/test# ./common_loader -d ens160 --filename packet_stat_prog.o --progsec xdp_pass -S -F -q
+root@ax:~/l4/test#
+```
+## 3.2 read
+```
+root@ax:~/l4/test# ./common_reader -d ens160 -q --tcp-syn-ack
+STAT_PKT_TCP_SYNACK packets: 0, pps: 0
+STAT_PKT_TCP_SYNACK packets: 8, pps: 4
+STAT_PKT_TCP_SYNACK packets: 16, pps: 4
+STAT_PKT_TCP_SYNACK packets: 27, pps: 5
+```
