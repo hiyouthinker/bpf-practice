@@ -355,7 +355,9 @@ int main(int argc, char **argv)
 	info_collection_t reals[16 + cpu_num];
 	int map_fd[16 + cpu_num];
 	struct config cfg = {
-		.ifindex   = -1,
+		.ifindex = {
+			[0 ... INTERFACE_NUM_MAX - 1] = -1,
+		},
 		.do_unload = false,
 	};
 	char pin_dir[1024];
@@ -364,7 +366,7 @@ int main(int argc, char **argv)
 	memset(reals, 0, sizeof(reals));
 	parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
 
-	if (cfg.ifindex == -1) {
+	if (cfg.ifindex[0] == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n\n");
 		usage(argv[0], __doc__, long_options, (argc == 1));
 		return EXIT_FAIL_OPTION;

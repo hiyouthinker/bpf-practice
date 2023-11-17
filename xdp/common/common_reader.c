@@ -79,16 +79,16 @@ static const struct option_wrapper long_options[] = {
 };
 
 static const char *pkt_stat_titles[] = {
-	[STAT_PKT_ALL]        = "STAT_PKT_ALL",
-	[STAT_PKT_ETH]        = "STAT_PKT_ETH",
-	[STAT_PKT_VLAN]       = "STAT_PKT_VLAN",
-	[STAT_PKT_IPV4]       = "STAT_PKT_IPV4",
-	[STAT_PKT_IPV6]       = "STAT_PKT_IPV6",
-	[STAT_PKT_TCP]        = "STAT_PKT_TCP",
-	[STAT_PKT_TCP_SYN]    = "STAT_PKT_TCP_SYN",
-	[STAT_PKT_TCP_SYNACK] = "STAT_PKT_TCP_SYNACK",
-	[STAT_PKT_TCP_FIN]    = "STAT_PKT_TCP_FIN",
-	[STAT_PKT_UDP]        = "STAT_PKT_UDP",
+	[STAT_PKT_ALL]        = "all",
+	[STAT_PKT_ETH]        = "ethernet",
+	[STAT_PKT_VLAN]       = "vlan",
+	[STAT_PKT_IPV4]       = "ipv4",
+	[STAT_PKT_IPV6]       = "ipv6",
+	[STAT_PKT_TCP]        = "tcp",
+	[STAT_PKT_TCP_SYN]    = "tcp syn",
+	[STAT_PKT_TCP_SYNACK] = "tcp syn/ack",
+	[STAT_PKT_TCP_FIN]    = "tcp fin",
+	[STAT_PKT_UDP]        = "udp",
 	[__STAT_PKT_MAX]      = "-",
 };
 

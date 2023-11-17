@@ -136,6 +136,41 @@ void parse_cmdline_args(int argc, char **argv,
 	while ((opt = getopt_long(argc, argv, "hd:r:L:R:ASNFUMQ:czpqDl:i:ms",
 				  long_options, &longindex)) != -1) {
 		switch (opt) {
+#ifdef __BIGBRO__
+		case 'd':
+			char *str = optarg, *ifname;
+			int i = 0;
+
+			memset(cfg->ifindex, 0, sizeof(cfg->ifindex));
+
+			while ((ifname = strsep(&str, ",")) != NULL) {
+					if (strlen(ifname) >= IF_NAMESIZE) {
+					fprintf(stderr, "ERR: --dev name too long\n");
+					goto error;
+				}
+
+				if (i >= INTERFACE_NUM_MAX) {
+					fprintf(stderr, "ERR: --dev name too many\n");
+					goto error;
+				}
+
+				if (i == 0) {
+					cfg->ifname = (char *)&cfg->ifname_buf;
+					snprintf(cfg->ifname, IF_NAMESIZE, "%s", ifname);
+				}
+
+				cfg->ifindex[i] = if_nametoindex(ifname);
+				if (cfg->ifindex[i] == 0) {
+					fprintf(stderr,
+						"ERR: --dev name unknown err(%d):%s\n",
+						errno, strerror(errno));
+					goto error;
+				}
+
+				i++;
+			}
+			break;
+#else
 		case 'd':
 			if (strlen(optarg) >= IF_NAMESIZE) {
 				fprintf(stderr, "ERR: --dev name too long\n");
@@ -151,6 +186,7 @@ void parse_cmdline_args(int argc, char **argv,
 				goto error;
 			}
 			break;
+#endif
 		case 'r':
 			if (strlen(optarg) >= IF_NAMESIZE) {
 				fprintf(stderr, "ERR: --redirect-dev name too long\n");

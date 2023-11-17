@@ -12,6 +12,8 @@
 #define FLAG_USE_MAP_IN_MAP  0x01
 #define FLAG_SHOW_STATISTICS 0x02
 
+#define INTERFACE_NUM_MAX 4
+
 enum {
 	SHOW_FLAG_TCP_FLAG = 1,
 	SHOW_FLAG_TCP_SYN_FLAG,
@@ -23,7 +25,11 @@ enum {
 
 struct config {
 	__u32 xdp_flags;
+#ifdef __BIGBRO__
+	int ifindex[INTERFACE_NUM_MAX];
+#else
 	int ifindex;
+#endif
 	char *ifname;
 	char ifname_buf[IF_NAMESIZE];
 	int redirect_ifindex;

@@ -163,7 +163,9 @@ int main(int argc, char **argv)
 
 	struct config cfg = {
 		.xdp_flags = XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_DRV_MODE,
-		.ifindex   = -1,
+		.ifindex = {
+			[0 ... INTERFACE_NUM_MAX - 1] = -1,
+		},
 		.do_unload = false,
 	};
 
@@ -174,13 +176,21 @@ int main(int argc, char **argv)
 		libbpf_set_print(my_print);
 	}
 
-	if (cfg.ifindex == -1) {
+	if (cfg.ifindex[0] == -1) {
 		fprintf(stderr, "ERR: required option --dev missing\n\n");
 		usage(argv[0], __doc__, long_options, (argc == 1));
 		return 0;
 	}
 	if (cfg.do_unload) {
-		xdp_link_detach(cfg.ifindex, cfg.xdp_flags, 0);
+		int i = 0;
+
+		for (i = 0; i < INTERFACE_NUM_MAX; i++) {
+			if (cfg.ifname[i] <= 0) {
+				break;
+			}
+			xdp_link_detach(cfg.ifindex[i], cfg.xdp_flags, 0);
+		}
+
 		return 0;
 	}
 
@@ -192,7 +202,7 @@ int main(int argc, char **argv)
 		printf("Success: Loaded BPF-object(%s) and used section(%s)\n",
 		       cfg.filename, cfg.progsec);
 		printf(" - XDP prog attached on device:%s(ifindex:%d)\n",
-		       cfg.ifname, cfg.ifindex);
+		       cfg.ifname, cfg.ifindex[0]);
 	}
 
 	if (cfg.ips[0]) {
