@@ -78,6 +78,7 @@ $(OBJECT_LIBBPF):
 	else \
 		cd $(LIBBPF_DIR) && $(MAKE) all OBJDIR=.; \
 		mkdir -p build; $(MAKE) install_headers DESTDIR=build OBJDIR=.; \
+		#$(MAKE) install_uapi_headers DESTDIR=build OBJDIR=.; \
 	fi
 
 # Create dependency: detect if C-file change and touch H-file, to trigger
@@ -97,6 +98,7 @@ $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJEC
 	$(CLANG) -S \
 	    -target bpf \
 	    -D __BPF_TRACING__ \
+	    $(CFLAGS) \
 	    $(BPF_CFLAGS) \
 	    -Wall \
 	    -Wno-unused-value \

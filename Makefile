@@ -1,4 +1,4 @@
-DIRS = sk_filter tc xdp
+DIRS = sk_filter tc xdp kernel-bpf-samples
 DIRS_CLEAN = $(addsuffix _clean,$(DIRS))
 
 .PHONY: clean $(DIRS) $(DIRS_CLEAN)
