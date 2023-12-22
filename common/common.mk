@@ -42,6 +42,8 @@ LDFLAGS ?= -L$(LIBBPF_DIR)
 
 BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
 
+EXTRA_CFLAGS +=
+
 #LIBS = -l:libbpf.a -lelf $(USER_LIBS)
 # BigBro @ 2021.05.21
 LIBS = -l:libbpf.a -lelf -lz $(USER_LIBS)
@@ -91,14 +93,14 @@ $(COMMON_OBJS): %.o: %.h
 	make -C $(COMMON_DIR)
 
 $(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
-	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) \
+	$(CC) -Wall $(CFLAGS) $(EXTRA_CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) \
 	 $< $(LIBS)
 
 $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJECT_LIBBPF)
 	$(CLANG) -S \
 	    -target bpf \
 	    -D __BPF_TRACING__ \
-	    $(CFLAGS) \
+	    $(EXTRA_CFLAGS) \
 	    $(BPF_CFLAGS) \
 	    -Wall \
 	    -Wno-unused-value \
