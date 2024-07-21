@@ -16,8 +16,9 @@
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 #include <arpa/inet.h>		/* for htonl */
 
-#include "../common/common_params.h"
-#include "../common/common_user_bpf_xdp.h"
+#include "../../common/common_params.h"
+#include "../../common/common_user_bpf.h"
+#include "../../common/common_user_bpf_xdp.h"
 #include "../include/lpm_structs.h"
 
 static const struct option_wrapper long_options[] = {
@@ -188,7 +189,7 @@ int main(int argc, char **argv)
 			if (cfg.ifname[i] <= 0) {
 				break;
 			}
-			xdp_link_detach(cfg.ifindex[i], cfg.xdp_flags, 0);
+			bpf_xdp_detach(cfg.ifindex[i], cfg.xdp_flags, NULL);
 		}
 
 		return 0;

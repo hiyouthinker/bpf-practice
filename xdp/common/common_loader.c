@@ -17,8 +17,9 @@
 #include <arpa/inet.h>		/* for htonl */
 #include <linux/err.h>	/* for IS_ERR_OR_NULL */
 
-#include "../common/common_params.h"
-#include "../common/common_user_bpf_xdp.h"
+#include "../../common/common_params.h"
+#include "../../common/common_user_bpf.h"
+#include "../../common/common_user_bpf_xdp.h"
 #include "../include/common_structs.h"
 
 static int inner_map_fd[MAX_SUPPORTED_CPUS];
@@ -174,7 +175,7 @@ int main(int argc, char **argv)
 			if (cfg.ifindex[i] <= 0) {
 				break;
 			}
-			xdp_link_detach(cfg.ifindex[i], cfg.xdp_flags, 0);
+			bpf_xdp_detach(cfg.ifindex[i], cfg.xdp_flags, NULL);
 		}
 
 		return 0;

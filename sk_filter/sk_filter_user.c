@@ -13,7 +13,7 @@
 #include <bpf/bpf.h>
 
 #include "common_kern_user.h"
-#include "../common/common_user_bpf_xdp.h"
+#include "../common/common_user_bpf.h"
 
 static int find_map_fd_by_name(struct bpf_object *bpf_obj, const char *mapname)
 {

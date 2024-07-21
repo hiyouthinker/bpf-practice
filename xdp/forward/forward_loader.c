@@ -17,8 +17,9 @@
 #include <arpa/inet.h>		/* for htonl */
 #include <linux/err.h>	/* for IS_ERR_OR_NULL */
 
-#include "../common/common_params.h"
-#include "../common/common_user_bpf_xdp.h"
+#include "../../common/common_params.h"
+#include "../../common/common_user_bpf.h"
+#include "../../common/common_user_bpf_xdp.h"
 #include "../include/forward_structs.h"
 
 #define ARRAY_ELEM_NUM(array) (sizeof(array) / sizeof((array)[0]))
@@ -396,7 +397,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (cfg.do_unload) {
-		xdp_link_detach(cfg.ifindex[0], cfg.xdp_flags, 0);
+		bpf_xdp_detach(cfg.ifindex[0], cfg.xdp_flags, NULL);
 		return 0;
 	}
 
