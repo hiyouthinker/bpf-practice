@@ -14,7 +14,7 @@ struct {
 	__type(value, __u64);
 } my_map SEC(".maps");
 
-SEC("reuseport")
+SEC("sk_reuseport")
 int bpf_reuseport_select(struct __sk_buff *skb)
 {
 	__u32 key;

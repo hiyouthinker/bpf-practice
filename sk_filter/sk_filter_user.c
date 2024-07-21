@@ -1,5 +1,5 @@
 /*
- * Author: BigBro / 2021.05 - 2023
+ * Author: BigBro / 2021.05 - 2024
  */
 
 #include <stdio.h>
@@ -13,22 +13,28 @@
 #include <bpf/bpf.h>
 
 #include "common_kern_user.h"
+#include "../common/common_user_bpf_xdp.h"
 
-static int __find_map_fd(struct bpf_object *bpf_obj, const char *mapname)
+static int find_map_fd_by_name(struct bpf_object *bpf_obj, const char *mapname)
 {
-	struct bpf_map *map;
-	int map_fd = -1;
-
-	/* Lesson#3: bpf_object to bpf_map */
-	map = bpf_object__find_map_by_name(bpf_obj, mapname);
-	if (!map) {
-		fprintf(stderr, "ERR: cannot find map by name: %s\n", mapname);
-		goto out;
+	int map_fd = bpf_object__find_map_fd_by_name(bpf_obj, mapname);
+	if (map_fd < 0) {
+		fprintf(stderr, "ERR: cannot find map by name %s: %s\n", mapname, strerror(map_fd));
 	}
 
-	map_fd = bpf_map__fd(map);
- out:
 	return map_fd;
+}
+
+static int find_prog_fd_by_name(struct bpf_object *bpf_obj, const char *progname)
+{
+	struct bpf_program *prog;
+
+	prog = bpf_object__find_program_by_name(bpf_obj, progname);
+	if (!prog) {
+		fprintf(stderr, "ERR: cannot find program by name %s: %s\n", progname, strerror(errno));
+	}
+
+	return bpf_program__fd(prog);
 }
 
 static void usage(char *cmd)
@@ -48,9 +54,6 @@ int main(int argc, char **argv)
 	int opt, port, ratio = 5;
 	int fd, one = 1;
 	struct sockaddr_in addr;
-	struct bpf_prog_load_attr prog_load_attr = {
-		.prog_type	= BPF_PROG_TYPE_SOCKET_FILTER,
-	};
 	struct bpf_object *obj;
 	int prog_fd, map_fd, i;
 	char *local_ip = "0.0.0.0";
@@ -82,19 +85,20 @@ int main(int argc, char **argv)
 		}
 	}
 
-	prog_load_attr.file = filename;
-
-	if (bpf_prog_load_xattr(&prog_load_attr, &obj, &prog_fd))
-		return 1;
-
-	if (!prog_fd) {
-		printf("bpf_prog_load_xattr: %s\n", strerror(errno));
+	obj = load_bpf_object_file(filename, NULL, NULL);
+	if (!obj) {
 		exit(0);
 	}
 
-	map_fd = __find_map_fd(obj, "my_map");
+	map_fd = find_map_fd_by_name(obj, "my_map");
 	if (map_fd < 0) {
-		printf("find_map_fd error\n");
+		printf("find_map_fd_by_name error...\n");
+		exit(0);
+	}
+
+	prog_fd = find_prog_fd_by_name(obj, "bpf_reuseport_select");
+	if (prog_fd < 0) {
+		printf("find_prog_fd_by_name error\n");
 		exit(0);
 	}
 

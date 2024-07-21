@@ -87,8 +87,8 @@ static int map_in_map_inner_create(struct bpf_object *obj)
 	}
 
 	for (cpu = 0; cpu < cpu_num; cpu++) {
-		inner_map_fd[cpu] = bpf_create_map_name(BPF_MAP_TYPE_LRU_HASH, SESSION_NAT_INNER_MAP_NAME
-							, sizeof(struct flow_key), sizeof(struct flow_value), SESS_NAT_TABLE_PERCPU_CAPACITY, 0);
+		inner_map_fd[cpu] = bpf_map_create(BPF_MAP_TYPE_LRU_HASH, SESSION_NAT_INNER_MAP_NAME
+							, sizeof(struct flow_key), sizeof(struct flow_value), SESS_NAT_TABLE_PERCPU_CAPACITY, NULL);
 		if (inner_map_fd[cpu] < 0) {
 			fprintf(stderr, "ERROR: creating map %s%d failed (%s)\n", SESSION_NAT_INNER_MAP_NAME, cpu, strerror(errno));
 			goto error;
