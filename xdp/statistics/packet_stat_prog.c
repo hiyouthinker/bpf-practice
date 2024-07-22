@@ -184,7 +184,7 @@ static __always_inline int pasre_packet(struct xdp_md *ctx, struct packet_descri
 	return 0;
 }
 
-SEC("xdp_pass") int xdp_pass_prog(struct xdp_md *ctx)
+SEC("xdp") int xdp_pass_prog(struct xdp_md *ctx)
 {
 	struct packet_description pkt = {};
 

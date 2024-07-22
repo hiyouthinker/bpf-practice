@@ -10,7 +10,7 @@
 #include "../include/common_structs.h"
 #include "../common/parsing_helpers.h"
 
-SEC("xdp_pkt_parse") int xdp_pkt_parse_prog(struct xdp_md *ctx)
+SEC("xdp") int xdp_pkt_parse_prog(struct xdp_md *ctx)
 {
 	__u64 cpuid = bpf_get_smp_processor_id();
 
@@ -71,7 +71,7 @@ done:
 	return XDP_PASS;
 }
 
-SEC("xdp_pass") int xdp_pass_prog(struct xdp_md *ctx)
+SEC("xdp") int xdp_pass_prog(struct xdp_md *ctx)
 {
 	static const char fmt[] = "in xdp_pass_prog";
 

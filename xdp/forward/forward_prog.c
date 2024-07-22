@@ -338,8 +338,7 @@ out:
 	return type;
 }
 
-SEC("xdp_udp_fullnat_forward")
-int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
+SEC("xdp") int xdp_udp_fullnat_forward_func(struct xdp_md *ctx)
 {
 	void *data_end = (void *)(long)ctx->data_end;
 	void *data = (void *)(long)ctx->data;
@@ -575,8 +574,7 @@ error:
 	goto done;
 }
 
-SEC("xdp_ip_forward")
-int xdp_ip_forward_func(struct xdp_md *ctx)
+SEC("xdp") int xdp_ip_forward_func(struct xdp_md *ctx)
 {
 	void *data_end = (void *)(long)ctx->data_end;
 	void *data = (void *)(long)ctx->data;
@@ -704,8 +702,7 @@ error:
 	goto done;
 }
 
-SEC("xdp_icmp_echo")
-int xdp_icmp_echo_func(struct xdp_md *ctx)
+SEC("xdp") int xdp_icmp_echo_func(struct xdp_md *ctx)
 {
 	void *data_end = (void *)(long)ctx->data_end;
 	void *data = (void *)(long)ctx->data;

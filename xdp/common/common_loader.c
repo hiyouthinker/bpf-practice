@@ -65,6 +65,9 @@ static const struct option_wrapper long_options[] = {
 	{{"progsec",    required_argument,	NULL,  2  },
 	 "Load program in <section> of the ELF file", "<section>"},
 
+	{{"progname",    required_argument,	NULL,  14  },
+	 "Load program by name", "<name>"},
+
 	{{0, 0, NULL,  0 }, NULL, false}
 };
 

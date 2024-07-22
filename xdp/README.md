@@ -20,19 +20,19 @@ Reading data from BPF map
 # 2 forward program
 ## 2.1 load
 ```
-young@xxx:~/bpf-practice/xdp$ sudo ./control/forward_loader -S --filename ebpf/forward_prog.o --progsec xdp_icmp_echo -d lo -F -q -D
+young@xxx:~/bpf-practice/xdp/forward$ sudo ./forward_loader -S --filename forward_prog.o --progname xdp_icmp_echo_func -d lo -F -q -D
 ......
 The fd of session_nat_table_inner0 in session_nat_table_outer is 3
 The fd of session_nat_table_inner1 in session_nat_table_outer is 4
 The fd of session_nat_table_inner2 in session_nat_table_outer is 5
 The fd of session_nat_table_inner3 in session_nat_table_outer is 6
-young@xxx:~/bpf-practice/xdp$ sudo ./control/forward_loader -S --filename ebpf/forward_prog.o --progsec xdp_ip_forward -d lo -F -q -D
+young@xxx:~/bpf-practice/xdp/forward$ sudo ./forward_loader -S --filename forward_prog.o --progname xdp_ip_forward_func -d lo -F -q -D
 ......
 The fd of session_nat_table_inner0 in session_nat_table_outer is 3
 The fd of session_nat_table_inner1 in session_nat_table_outer is 4
 The fd of session_nat_table_inner2 in session_nat_table_outer is 5
 The fd of session_nat_table_inner3 in session_nat_table_outer is 6
-young@xxx:~/bpf-practice/xdp$ sudo ./control/forward_loader -S --filename ebpf/forward_prog.o --progsec xdp_udp_fullnat_forward -d lo -F -q -D
+young@xxx:~/bpf-practice/xdp/forward$ sudo ./forward_loader -S --filename forward_prog.o --progname xdp_udp_fullnat_forward_func -d lo -F -q -D
 ......
 The fd of session_nat_table_inner0 in session_nat_table_outer is 3
 The fd of session_nat_table_inner1 in session_nat_table_outer is 4
@@ -41,7 +41,7 @@ The fd of session_nat_table_inner3 in session_nat_table_outer is 6
 ```
 ## 2.2 read
 ```
-young@xxx:~/bpf-practice/xdp$ sudo ./control/forward_reader -d lo -q
+young@xxx:~/bpf-practice/xdp/forward$ sudo ./forward_reader -d lo -q
 =============================================================================== 000
 All pkts                                                     7 pkts         462 bytes
 TCPv4                                                        7 pkts         462 bytes
@@ -57,7 +57,7 @@ CPU02: PASS                                                         2
 # 3 statistics program
 ## 3.1 load
 ```
-root@ax:~/l4/test# ./common_loader -d ens160 --filename packet_stat_prog.o --progsec xdp_pass -S -F -q
+root@ax:~/l4/test# ./common_loader -d ens160 --filename packet_stat_prog.o --progname xdp_pass_prog -S -F -q
 root@ax:~/l4/test#
 ```
 ## 3.2 read
