@@ -36,19 +36,24 @@ struct bpf_object *load_bpf_and_xdp_attach(struct config *cfg,
 	if (cfg->progsec[0])
 		/* Find a matching BPF prog section name */
 		bpf_prog = bpf_object__find_program_by_title(bpf_obj, cfg->progsec);
+	else if (cfg->progname[0])
+		bpf_prog = bpf_object__find_program_by_name(bpf_obj, cfg->progname);
 	else
 		/* Find the first program */
 		bpf_prog = bpf_object__next_program(bpf_obj, NULL);
 
 	if (!bpf_prog) {
-		fprintf(stderr, "ERR: couldn't find a program in ELF section '%s'\n", cfg->progsec);
+		if (cfg->progsec[0])
+			fprintf(stderr, "ERR: couldn't find a program in ELF section '%s'\n", cfg->progsec);
+		else if (cfg->progname[0])
+			fprintf(stderr, "ERR: couldn't find a program by program name '%s'\n", cfg->progname);
+		else
+			fprintf(stderr, "ERR: couldn't find any program\n");
 		exit(EXIT_FAIL_BPF);
 	}
 
-	strncpy(cfg->progsec, bpf_program__section_name(bpf_prog), sizeof(cfg->progsec));
-
 	prog_fd = bpf_program__fd(bpf_prog);
-	if (prog_fd <= 0) {
+	if (prog_fd < 0) {
 		fprintf(stderr, "ERR: bpf_program__fd failed\n");
 		exit(EXIT_FAIL_BPF);
 	}

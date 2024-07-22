@@ -299,6 +299,10 @@ void parse_cmdline_args(int argc, char **argv,
 		case 13:
 			cfg->show_flags = SHOW_FLAG_UDP_FLAG;
 			break;
+		case 14: /* --progname */
+			dest  = (char *)&cfg->progname;
+			strncpy(dest, optarg, sizeof(cfg->progname));
+			break;
 #endif
 		case 'Q':
 			cfg->xsk_if_queue = atoi(optarg);

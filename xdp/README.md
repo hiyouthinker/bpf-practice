@@ -1,7 +1,7 @@
 # 1 lpm program
 ## 1.1 load
 ```
-root@ax:~/test# ./lpm_loader -S --filename lpm_prog.o --progsec xdp_lpm -d ens192 -F -l 1.1.1.1,2.3.4.0/24 -q -D
+root@ax:~/test# ./lpm_loader -S --filename lpm_prog.o --progname xdp_lpm_func -d ens192 -F -l 1.1.1.1,2.3.4.0/24 -q -D
 ips: [1.1.1.1,2.3.4.0/24]
 ip/mask: 1.1.1.1/32
 key: 1.1.1.1, value: 1.1.1.1

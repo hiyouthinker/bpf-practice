@@ -40,6 +40,9 @@ struct config {
 	char pin_dir[512];
 	char filename[512];
 	char progsec[32];
+#ifdef __BIGBRO__
+	char progname[32];
+#endif
 	char src_mac[18];
 	char dest_mac[18];
 	__u16 xsk_bind_flags;

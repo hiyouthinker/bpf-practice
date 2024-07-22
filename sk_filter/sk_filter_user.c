@@ -15,28 +15,6 @@
 #include "common_kern_user.h"
 #include "../common/common_user_bpf.h"
 
-static int find_map_fd_by_name(struct bpf_object *bpf_obj, const char *mapname)
-{
-	int map_fd = bpf_object__find_map_fd_by_name(bpf_obj, mapname);
-	if (map_fd < 0) {
-		fprintf(stderr, "ERR: cannot find map by name %s: %s\n", mapname, strerror(map_fd));
-	}
-
-	return map_fd;
-}
-
-static int find_prog_fd_by_name(struct bpf_object *bpf_obj, const char *progname)
-{
-	struct bpf_program *prog;
-
-	prog = bpf_object__find_program_by_name(bpf_obj, progname);
-	if (!prog) {
-		fprintf(stderr, "ERR: cannot find program by name %s: %s\n", progname, strerror(errno));
-	}
-
-	return bpf_program__fd(prog);
-}
-
 static void usage(char *cmd)
 {
 	printf("usage: %s\n", cmd);

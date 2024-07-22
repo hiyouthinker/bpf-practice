@@ -17,6 +17,39 @@
 #define PATH_MAX	4096
 #endif
 
+int find_map_fd_by_name(struct bpf_object *bpf_obj, const char *mapname)
+{
+	int map_fd = bpf_object__find_map_fd_by_name(bpf_obj, mapname);
+	if (map_fd < 0) {
+		fprintf(stderr, "ERR: cannot find map by name %s: %s\n", mapname, strerror(map_fd));
+	}
+
+	return map_fd;
+}
+
+int find_prog_fd_by_name(struct bpf_object *bpf_obj, const char *progname)
+{
+	struct bpf_program *prog;
+
+	prog = bpf_object__find_program_by_name(bpf_obj, progname);
+	if (!prog) {
+		fprintf(stderr, "ERR: cannot find program by name %s: %s\n", progname, strerror(errno));
+	}
+
+	return bpf_program__fd(prog);
+}
+
+struct bpf_program *bpf_object__find_program_by_title(const struct bpf_object *obj, const char *title)
+{
+	struct bpf_program *pos;
+
+	bpf_object__for_each_program(pos, obj) {
+		if (bpf_program__section_name(pos) && !strcmp(bpf_program__section_name(pos), title))
+			return pos;
+	}
+	return NULL;
+}
+
 static int reuse_maps(struct bpf_object *obj, const char *path)
 {
 	struct bpf_map *map;
@@ -130,18 +163,6 @@ struct bpf_object *load_bpf_object_file(char *filename,
 	}
 
 	return obj;
-}
-
-struct bpf_program *bpf_object__find_program_by_title(const struct bpf_object *obj,
-				  const char *title)
-{
-	struct bpf_program *pos;
-
-	bpf_object__for_each_program(pos, obj) {
-		if (bpf_program__section_name(pos) && !strcmp(bpf_program__section_name(pos), title))
-			return pos;
-	}
-	return NULL;
 }
 
 int check_map_fd_info(const struct bpf_map_info *info,

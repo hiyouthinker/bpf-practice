@@ -40,14 +40,14 @@ static __always_inline int ipv4_lpm_lookup(__be32 saddr, __u64 app_id, __u32 pre
 	return 0;
 }
 
-SEC("xdp_lpm")
+SEC("xdp")
 int xdp_lpm_func(struct xdp_md *ctx)
 {
 	ipv4_lpm_lookup(0x01010101, 1, 64 + 32);
 	return XDP_PASS;
 }
 
-SEC("xdp_pass")
+SEC("xdp")
 int xdp_pass_func(struct xdp_md *ctx)
 {
 	return XDP_PASS;
