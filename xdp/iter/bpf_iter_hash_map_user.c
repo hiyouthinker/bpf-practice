@@ -137,12 +137,11 @@ static int libbpf_print_fn(enum libbpf_print_level level,
 	return 0;
 }
 
-
 int main(int argc, char *argv[])
 {
-    libbpf_set_print(libbpf_print_fn);
+	libbpf_set_print(libbpf_print_fn);
 
-    printf("====begin====\n");
-    test_bpf_hash_map();
-    printf("====end====\n");
+	printf("====begin====\n");
+	test_bpf_hash_map();
+	printf("====end====\n");
 }
