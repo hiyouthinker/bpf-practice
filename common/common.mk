@@ -37,6 +37,7 @@ EXTRA_DEPS +=
 KERN_USER_H ?= $(wildcard common_kern_user.h)
 
 CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -g
+CFLAGS += -I$(LIBBPF_DIR)/../include/uapi/
 CFLAGS += -I../headers/
 LDFLAGS ?= -L$(LIBBPF_DIR)
 
