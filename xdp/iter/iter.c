@@ -9,53 +9,7 @@
  * from linux/tools/testing/selftests/bpf/bpf_iter_bpf_hash_map.skel.h
  */
 #include "bpf_iter_bpf_hash_map.skel.h"
-
-#define _CHECK(condition, tag, duration, format...) ({			\
-	int __ret = !!(condition);					\
-	int __save_errno = errno;					\
-	if (__ret) {							\
-		fprintf(stdout, "%s:FAIL1:%s ", __func__, tag);		\
-		fprintf(stdout, ##format);				\
-	} else {							\
-		fprintf(stdout, "%s:PASS:%s %d nsec\n",			\
-		       __func__, tag, duration);			\
-	}								\
-	errno = __save_errno;						\
-	__ret;								\
-})
-
-#define CHECK_FAIL(condition) ({					\
-	int __ret = !!(condition);					\
-	int __save_errno = errno;					\
-	if (__ret) {							\
-		fprintf(stdout, "%s:FAIL:%d\n", __func__, __LINE__);	\
-	}								\
-	errno = __save_errno;						\
-	__ret;								\
-})
-
-#define CHECK(condition, tag, format...) \
-	_CHECK(condition, tag, duration, format)
-#define CHECK_ATTR(condition, tag, format...) \
-	_CHECK(condition, tag, tattr.duration, format)
-
-#define ASSERT_OK_PTR(ptr, name) ({					\
-	static int duration = 0;					\
-	const void *___res = (ptr);					\
-	int ___err = libbpf_get_error(___res);				\
-	bool ___ok = ___err == 0;					\
-	CHECK(!___ok, (name), "unexpected error: %d\n", ___err);	\
-	___ok;								\
-})
-
-#define ASSERT_ERR_PTR(ptr, name) ({					\
-	static int duration = 0;					\
-	const void *___res = (ptr);					\
-	int ___err = libbpf_get_error(___res);				\
-	bool ___ok = ___err != 0;					\
-	CHECK(!___ok, (name), "unexpected pointer: %p\n", ___res);	\
-	___ok;								\
-})
+#include "check.h"
 
 static void test_bpf_hash_map(void)
 {
@@ -75,23 +29,24 @@ static void test_bpf_hash_map(void)
 
 	skel = bpf_iter_bpf_hash_map__open();
 	if (!skel) {
-        printf("bpf_iter_bpf_hash_map__open: skeleton open failed\n");
+		printf("bpf_iter_bpf_hash_map__open: skeleton open failed\n");
 		return;
-    }
+	}
 
 	skel->bss->in_test_mode = true;
 
 	err = bpf_iter_bpf_hash_map__load(skel);
 	if (!skel) {
-        printf("bpf_iter_bpf_hash_map__load: skeleton load failed\n");
+		printf("bpf_iter_bpf_hash_map__load: skeleton load failed\n");
 		goto out;
-    }
+	}
 
 	/* iterator with hashmap2 and hashmap3 should fail */
 	memset(&linfo, 0, sizeof(linfo));
-	linfo.map.map_fd = bpf_map__fd(skel->maps.hashmap2);
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
+
+	linfo.map.map_fd = bpf_map__fd(skel->maps.hashmap2);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_hash_map, &opts);
 	if (!ASSERT_ERR_PTR(link, "attach_iter"))
 		goto out;
@@ -132,12 +87,15 @@ static void test_bpf_hash_map(void)
     }
 
 	/* do some tests */
-	while ((len = read(iter_fd, buf, sizeof(buf))) > 0)
-		;
+	while ((len = read(iter_fd, buf, sizeof(buf))) > 0) {
+		printf("buf: %s\n", buf);
+	}
 
 	if (len < 0) {
-        printf("read failed: %s\n", strerror(errno));
+		printf("read failed: %s\n", strerror(errno));
 		goto close_iter;
+	} else {
+        printf("len: %d\n", len);
     }
 
 	printf("max_entries: %d\n", bpf_map__max_entries(skel->maps.hashmap1));
