@@ -40,7 +40,7 @@ CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -g
 CFLAGS += -I../headers/
 LDFLAGS ?= -L$(LIBBPF_DIR)
 
-BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
+BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I$(LIBBPF_DIR)/../include/uapi/ -I../headers/
 
 EXTRA_CFLAGS +=
 
