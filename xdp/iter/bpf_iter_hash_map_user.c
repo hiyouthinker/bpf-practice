@@ -25,7 +25,7 @@ static void test_bpf_hash_map(void)
 		int b;
 		int c;
 	} key;
-	char buf[64];
+	char buf[64] = {0};
 
 	skel = bpf_iter_bpf_hash_map__open();
 	if (!skel) {
@@ -36,7 +36,7 @@ static void test_bpf_hash_map(void)
 	skel->bss->in_test_mode = true;
 
 	err = bpf_iter_bpf_hash_map__load(skel);
-	if (!skel) {
+	if (err) {
 		printf("bpf_iter_bpf_hash_map__load: skeleton load failed\n");
 		goto out;
 	}
@@ -70,9 +70,9 @@ static void test_bpf_hash_map(void)
 
 		err = bpf_map_update_elem(map_fd, &key, &val, BPF_ANY);
 		if (err) {
-            printf("map_update failed\n");
+			printf("map_update failed\n");
 			goto out;
-        }
+		}
 	}
 
 	linfo.map.map_fd = map_fd;
@@ -82,43 +82,36 @@ static void test_bpf_hash_map(void)
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
 	if (iter_fd < 0) {
-        printf("create_iter failed\n");
+		printf("create_iter failed\n");
 		goto free_link;
-    }
+	}
 
 	/* do some tests */
-	while ((len = read(iter_fd, buf, sizeof(buf))) > 0) {
-		printf("buf: %s\n", buf);
+	while ((len = read(iter_fd, buf, sizeof(buf) - 1)) > 0) {
+		printf("buf: [%s]\n", buf);
+		memset(buf, 0, sizeof(buf));
 	}
 
 	if (len < 0) {
 		printf("read failed: %s\n", strerror(errno));
 		goto close_iter;
-	} else {
-        printf("len: %d\n", len);
-    }
-
-	printf("max_entries: %d\n", bpf_map__max_entries(skel->maps.hashmap1));
-	printf("expected_key_a: %d\n", expected_key_a);
-	printf("expected_key_b: %d\n", expected_key_b);
-	printf("expected_key_c: %d\n", expected_key_c);
-	printf("expected_key_c: %d\n", expected_key_c);
+	}
 
 	/* test results */
 	if (skel->bss->key_sum_a != expected_key_a) {
 		printf("key_sum_a: got %u expected %u\n", skel->bss->key_sum_a, expected_key_a);
 		goto close_iter;
-    }
+	}
 
 	if (skel->bss->key_sum_b != expected_key_b) {
 		printf("key_sum_b: got %u expected %u\n", skel->bss->key_sum_b, expected_key_b);
 		goto close_iter;
-    }
+	}
 
 	if (skel->bss->val_sum != expected_val) {
 		printf("val_sum: got %llu expected %llu\n", skel->bss->val_sum, expected_val);
 		goto close_iter;
-    }
+	}
 
 close_iter:
 	close(iter_fd);
